@@ -40,6 +40,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/notes/{id}", s.deleteNote)
 	s.mux.HandleFunc("GET /api/notes/{id}/cards", s.listCards)
 	s.mux.HandleFunc("POST /api/notes/{id}/cards", s.createCard)
+	s.mux.HandleFunc("POST /api/cards", s.createStandaloneCard)
 	s.mux.HandleFunc("GET /api/notes/{id}/annotations", s.listAnnotations)
 	s.mux.HandleFunc("POST /api/notes/{id}/annotations", s.createAnnotation)
 	s.mux.HandleFunc("DELETE /api/annotations/{id}", s.deleteAnnotation)
@@ -244,7 +245,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	if answer == "" {
 		answer = input.SourceText
 	}
-	card := model.Card{NoteID: note.ID, Excerpt: clozeExcerpt(note.Content, input.StartOffset, input.EndOffset), SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
+	card := model.Card{NoteID: &note.ID, Excerpt: clozeExcerpt(note.Content, input.StartOffset, input.EndOffset), SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
 	now := time.Now()
 	state, err := json.Marshal(fsrs.NewCard(now))
 	if err != nil {
@@ -260,6 +261,47 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, card)
 }
 
+func (s *Server) createStandaloneCard(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Question string `json:"question"`
+		Answer   string `json:"answer"`
+		Context  string `json:"context"`
+		Excerpt  string `json:"excerpt"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	question := strings.TrimSpace(input.Question)
+	answer := strings.TrimSpace(input.Answer)
+	context := strings.TrimSpace(input.Context)
+	if context == "" {
+		context = strings.TrimSpace(input.Excerpt)
+	}
+	if question == "" || answer == "" {
+		writeError(w, 400, errors.New("question and answer are required"))
+		return
+	}
+	card := model.Card{Question: question, Answer: answer, Excerpt: context, AnchorValid: false}
+	now := time.Now()
+	state, err := json.Marshal(fsrs.NewCard(now))
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	card.FSRSState = string(state)
+	card.DueAt = &now
+	if err := s.db.Create(&card).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	type cardItem struct {
+		model.Card
+		NoteTitle  string `json:"noteTitle"`
+		NoteFormat string `json:"noteFormat"`
+	}
+	writeJSON(w, 201, cardItem{Card: card, NoteTitle: "独立卡片", NoteFormat: "markdown"})
+}
+
 func (s *Server) listAnnotations(w http.ResponseWriter, r *http.Request) {
 	var annotations []model.Annotation
 	if err := s.db.Where("note_id = ?", r.PathValue("id")).Order("created_at desc").Find(&annotations).Error; err != nil {
@@ -271,7 +313,7 @@ func (s *Server) listAnnotations(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 	var cards []model.Card
-	query := s.db.Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
+	query := s.db.Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 		like := "%" + strings.ReplaceAll(strings.ReplaceAll(search, "%", "\\%"), "_", "\\_") + "%"
 		query = query.Where("cards.question LIKE ? OR cards.answer LIKE ? OR cards.excerpt LIKE ? OR notes.title LIKE ?", like, like, like, like)
@@ -288,7 +330,9 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 	result := make([]cardItem, 0, len(cards))
 	for _, card := range cards {
 		card = normalizeCard(card)
-		card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
+		if card.NoteID != nil {
+			card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
+		}
 		result = append(result, cardItem{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
 	writeJSON(w, 200, result)
@@ -349,7 +393,7 @@ func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	var cards []model.Card
-	if err := s.db.Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Order("cards.due_at asc").Find(&cards).Error; err != nil {
+	if err := s.db.Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Order("cards.due_at asc").Find(&cards).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
@@ -361,8 +405,14 @@ func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 	result := make([]dueCard, 0, len(cards))
 	for _, card := range cards {
 		card = normalizeCard(card)
-		card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
-		result = append(result, dueCard{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
+		if card.NoteID != nil {
+			card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
+		}
+		noteTitle, noteFormat := card.Note.Title, card.Note.Format
+		if card.NoteID == nil {
+			noteTitle, noteFormat = "独立卡片", "markdown"
+		}
+		result = append(result, dueCard{Card: card, NoteTitle: noteTitle, NoteFormat: noteFormat})
 	}
 	writeJSON(w, 200, result)
 }
@@ -493,13 +543,14 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		Question    string    `json:"question"`
 		Excerpt     string    `json:"excerpt"`
 		NoteTitle   string    `json:"noteTitle"`
+		NoteID      *uint     `json:"-"`
 		NoteText    string    `json:"-"`
 		StartOffset int       `json:"-"`
 		EndOffset   int       `json:"-"`
 	}
 	var history []historyItem
 	err := s.db.Table("review_logs").
-		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
 		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
 		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
 		Order("review_logs.reviewed_at desc").
@@ -513,7 +564,11 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		history = []historyItem{}
 	}
 	for i := range history {
-		history[i].Excerpt = clozeExcerpt(history[i].NoteText, history[i].StartOffset, history[i].EndOffset)
+		if history[i].NoteID != nil {
+			history[i].Excerpt = clozeExcerpt(history[i].NoteText, history[i].StartOffset, history[i].EndOffset)
+		} else {
+			history[i].NoteTitle = "独立卡片"
+		}
 	}
 	writeJSON(w, 200, history)
 }
@@ -537,6 +592,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		Question    string    `json:"question"`
 		Excerpt     string    `json:"excerpt"`
 		NoteTitle   string    `json:"noteTitle"`
+		NoteID      *uint     `json:"-"`
 		NoteText    string    `json:"-"`
 		StartOffset int       `json:"-"`
 		EndOffset   int       `json:"-"`
@@ -560,11 +616,11 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
-	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Count(&cards).Error; err != nil {
+	if err := s.db.Model(&model.Card{}).Count(&cards).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
-	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Count(&due).Error; err != nil {
+	if err := s.db.Model(&model.Card{}).Where("due_at IS NULL OR due_at <= ?", now).Count(&due).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
@@ -608,7 +664,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	var recent []recentItem
 	if err := s.db.Table("review_logs").
-		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
 		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
 		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
 		Order("review_logs.reviewed_at desc").Limit(8).Scan(&recent).Error; err != nil {
@@ -616,7 +672,11 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range recent {
-		recent[i].Excerpt = clozeExcerpt(recent[i].NoteText, recent[i].StartOffset, recent[i].EndOffset)
+		if recent[i].NoteID != nil {
+			recent[i].Excerpt = clozeExcerpt(recent[i].NoteText, recent[i].StartOffset, recent[i].EndOffset)
+		} else {
+			recent[i].NoteTitle = "独立卡片"
+		}
 	}
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average},
@@ -631,11 +691,11 @@ func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
-	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Count(&cards).Error; err != nil {
+	if err := s.db.Model(&model.Card{}).Count(&cards).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
-	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Count(&due).Error; err != nil {
+	if err := s.db.Model(&model.Card{}).Where("due_at IS NULL OR due_at <= ?", now).Count(&due).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}

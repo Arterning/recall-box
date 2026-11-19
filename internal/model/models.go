@@ -23,7 +23,7 @@ type Note struct {
 // units, matching textarea.selectionStart/selectionEnd in browser editors.
 type Card struct {
 	ID          uint   `json:"id" gorm:"primaryKey"`
-	NoteID      uint   `json:"noteId" gorm:"not null;index"`
+	NoteID      *uint  `json:"noteId,omitempty" gorm:"index"`
 	Note        Note   `json:"-"`
 	Excerpt     string `json:"excerpt" gorm:"type:text;not null"`
 	SourceText  string `json:"-" gorm:"type:text;not null;default:''"`

@@ -9,7 +9,7 @@ export type Note = {
 
 export type Card = {
   id: number
-  noteId: number
+  noteId?: number | null
   excerpt: string
   startOffset: number
   endOffset: number
