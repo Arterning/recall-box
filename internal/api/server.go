@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
 
+	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 	"recall-box/internal/model"
 
 	"gorm.io/gorm"
@@ -39,6 +41,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/notes/{id}/cards", s.createCard)
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
 	s.mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
+	s.mux.HandleFunc("POST /api/cards/{id}/review", s.reviewCard)
+	s.mux.HandleFunc("GET /api/reviews/stats", s.reviewStats)
 }
 
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +109,22 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 	if input.Tags != nil {
 		updates["tags"] = *input.Tags
 	}
-	if err := s.db.Model(&note).Updates(updates).Error; err != nil {
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if input.Content != nil && *input.Content != note.Content {
+			var cards []model.Card
+			if err := tx.Where("note_id = ?", note.ID).Find(&cards).Error; err != nil {
+				return err
+			}
+			for _, card := range cards {
+				start, end, found := findAnchor(*input.Content, card.Excerpt, card.StartOffset)
+				if err := tx.Model(&card).Updates(map[string]any{"start_offset": start, "end_offset": end, "anchor_valid": found}).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return tx.Model(&note).Updates(updates).Error
+	})
+	if err != nil {
 		writeError(w, 500, err)
 		return
 	}
@@ -114,13 +133,19 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
-	result := s.db.Delete(&model.Note{}, r.PathValue("id"))
-	if result.Error != nil {
-		writeError(w, 500, result.Error)
+	var note model.Note
+	if err := s.db.First(&note, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
 		return
 	}
-	if result.RowsAffected == 0 {
-		writeError(w, 404, errors.New("note not found"))
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("note_id = ?", note.ID).Delete(&model.Card{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&note).Error
+	})
+	if err != nil {
+		writeError(w, 500, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -159,7 +184,19 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, errors.New("selection offsets exceed note content"))
 		return
 	}
-	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, StartOffset: input.StartOffset, EndOffset: input.EndOffset, Prompt: input.Prompt, Answer: input.Answer}
+	if input.EndOffset == input.StartOffset || len(utf16.Encode([]rune(input.Excerpt))) != input.EndOffset-input.StartOffset || sliceUTF16(note.Content, input.StartOffset, input.EndOffset) != input.Excerpt {
+		writeError(w, 400, errors.New("selection text and offsets do not match"))
+		return
+	}
+	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Prompt: input.Prompt, Answer: input.Answer}
+	now := time.Now()
+	state, err := json.Marshal(fsrs.NewCard(now))
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	card.FSRSState = string(state)
+	card.DueAt = &now
 	if err := s.db.Create(&card).Error; err != nil {
 		writeError(w, 500, err)
 		return
@@ -170,11 +207,104 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	var cards []model.Card
-	if err := s.db.Preload("Note").Where("due_at IS NULL OR due_at <= ?", now).Order("due_at asc").Find(&cards).Error; err != nil {
+	if err := s.db.Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Order("cards.due_at asc").Find(&cards).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
-	writeJSON(w, 200, cards)
+	type dueCard struct {
+		model.Card
+		NoteTitle string `json:"noteTitle"`
+	}
+	result := make([]dueCard, 0, len(cards))
+	for _, card := range cards {
+		result = append(result, dueCard{Card: card, NoteTitle: card.Note.Title})
+	}
+	writeJSON(w, 200, result)
+}
+
+func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Rating int `json:"rating"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if input.Rating < int(fsrs.Again) || input.Rating > int(fsrs.Easy) {
+		writeError(w, 400, errors.New("rating must be between 1 (Again) and 4 (Easy)"))
+		return
+	}
+	id, err := strconv.ParseUint(r.PathValue("id"), 10, 32)
+	if err != nil {
+		writeError(w, 400, errors.New("invalid card id"))
+		return
+	}
+	var card model.Card
+	if err := s.db.First(&card, uint(id)).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	var state fsrs.Card
+	if card.FSRSState == "" {
+		state = fsrs.NewCard(card.CreatedAt)
+	} else if err := json.Unmarshal([]byte(card.FSRSState), &state); err != nil {
+		writeError(w, 500, errors.New("could not read card scheduling state"))
+		return
+	}
+	now := time.Now()
+	scheduled, err := fsrs.NewFSRS(fsrs.DefaultParam()).Next(state, now, fsrs.Rating(input.Rating))
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	stateJSON, err := json.Marshal(scheduled.Card)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	fsrsLogJSON, err := json.Marshal(scheduled.ReviewLog)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	dueBefore := card.DueAt
+	dueAfter := scheduled.Card.Due
+	logEntry := model.ReviewLog{CardID: card.ID, Rating: input.Rating, ReviewedAt: now, DueBefore: dueBefore, DueAfter: &dueAfter, FSRSLog: string(fsrsLogJSON)}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&card).Updates(map[string]any{"fsrs_state": string(stateJSON), "due_at": dueAfter}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&logEntry).Error
+	})
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	card.FSRSState = string(stateJSON)
+	card.DueAt = &dueAfter
+	writeJSON(w, 200, map[string]any{"card": card, "review": logEntry, "dueAt": dueAfter})
+}
+
+func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	var notes, cards, due, reviewed int64
+	if err := s.db.Model(&model.Note{}).Count(&notes).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Count(&cards).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Count(&due).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if err := s.db.Model(&model.ReviewLog{}).Where("reviewed_at >= ?", start).Count(&reviewed).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]int64{"notes": notes, "cards": cards, "due": due, "reviewedToday": reviewed})
 }
 
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
@@ -220,4 +350,43 @@ func normalizeFormat(format string) string {
 		return "text"
 	}
 	return "markdown"
+}
+
+func findAnchor(content, excerpt string, near int) (int, int, bool) {
+	contentUnits := utf16.Encode([]rune(content))
+	excerptUnits := utf16.Encode([]rune(excerpt))
+	if len(excerptUnits) == 0 || len(excerptUnits) > len(contentUnits) {
+		return 0, 0, false
+	}
+	best, bestDistance := -1, int(^uint(0)>>1)
+	for i := 0; i+len(excerptUnits) <= len(contentUnits); i++ {
+		match := true
+		for j := range excerptUnits {
+			if contentUnits[i+j] != excerptUnits[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			distance := i - near
+			if distance < 0 {
+				distance = -distance
+			}
+			if distance < bestDistance {
+				best, bestDistance = i, distance
+			}
+		}
+	}
+	if best < 0 {
+		return 0, 0, false
+	}
+	return best, best + len(excerptUnits), true
+}
+
+func sliceUTF16(content string, start, end int) string {
+	units := utf16.Encode([]rune(content))
+	if start < 0 || end < start || end > len(units) {
+		return ""
+	}
+	return string(utf16.Decode(units[start:end]))
 }

@@ -28,6 +28,7 @@ type Card struct {
 	Excerpt     string         `json:"excerpt" gorm:"type:text;not null"`
 	StartOffset int            `json:"startOffset" gorm:"not null;default:0"`
 	EndOffset   int            `json:"endOffset" gorm:"not null;default:0"`
+	AnchorValid bool           `json:"anchorValid" gorm:"not null;default:true"`
 	Prompt      string         `json:"prompt" gorm:"type:text;not null;default:''"`
 	Answer      string         `json:"answer" gorm:"type:text;not null;default:''"`
 	DueAt       *time.Time     `json:"dueAt" gorm:"index"`
@@ -44,5 +45,6 @@ type ReviewLog struct {
 	ReviewedAt time.Time  `json:"reviewedAt" gorm:"index"`
 	DueBefore  *time.Time `json:"dueBefore,omitempty"`
 	DueAfter   *time.Time `json:"dueAfter,omitempty"`
+	FSRSLog    string     `json:"fsrsLog,omitempty" gorm:"type:text"`
 	CreatedAt  time.Time  `json:"createdAt"`
 }

@@ -1,6 +1,7 @@
 .cache/
 web/node_modules/
 web/dist/
+dist/
 *.db
 *.db-shm
 *.db-wal

@@ -2,15 +2,19 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"recall-box/internal/api"
 	"recall-box/internal/store"
+	"recall-box/internal/webui"
 )
 
 func main() {
@@ -27,10 +31,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen on 127.0.0.1:34115: %v", err)
 	}
-	log.Printf("Recall Box API listening at http://%s (database: %s)", listener.Addr(), dbPath)
-	server := &http.Server{Handler: api.New(db), ReadHeaderTimeout: 5 * time.Second}
+	address := "http://" + listener.Addr().String()
+	mux := http.NewServeMux()
+	mux.Handle("/api/", api.New(db))
+	mux.Handle("/", webui.Handler())
+	log.Printf("Recall Box listening at %s (database: %s)", address, dbPath)
+	if os.Getenv("RECALL_BOX_NO_BROWSER") == "" {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			var command *exec.Cmd
+			switch runtime.GOOS {
+			case "windows":
+				command = exec.Command("rundll32", "url.dll,FileProtocolHandler", address)
+			case "darwin":
+				command = exec.Command("open", address)
+			default:
+				command = exec.Command("xdg-open", address)
+			}
+			if err := command.Start(); err != nil {
+				log.Printf("open browser: %v", err)
+			}
+		}()
+	}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+		log.Fatal(fmt.Errorf("serve local app: %w", err))
 	}
 }
 
