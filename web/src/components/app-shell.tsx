@@ -3,7 +3,7 @@ import {
   ChartNoAxesColumnIncreasing,
   Layers3,
   Settings2,
-  Sparkles,
+  Brain,
   Moon,
   Sun,
 } from "lucide-react"
@@ -14,7 +14,7 @@ import { useTheme } from "@/components/theme-provider"
 
 const navigation = [
   { to: "/notes", label: "笔记", icon: BookOpenText },
-  { to: "/review", label: "今日复习", icon: Sparkles, badge: true },
+  { to: "/review", label: "今日复习", icon: Brain, badge: true },
   { to: "/cards", label: "卡片库", icon: Layers3 },
   { to: "/statistics", label: "复习统计", icon: ChartNoAxesColumnIncreasing },
   { to: "/settings", label: "设置", icon: Settings2 },

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,6 +50,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/reviews/history", s.reviewHistory)
 	s.mux.HandleFunc("GET /api/reviews/overview", s.reviewOverview)
 	s.mux.HandleFunc("GET /api/reviews/stats", s.reviewStats)
+	s.mux.HandleFunc("GET /api/settings", s.getSettings)
+	s.mux.HandleFunc("PUT /api/settings", s.updateSettings)
 }
 
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +397,14 @@ func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now()
-	scheduled, err := fsrs.NewFSRS(fsrs.DefaultParam()).Next(state, now, fsrs.Rating(input.Rating))
+	retention, err := s.desiredRetention()
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	params := fsrs.DefaultParam()
+	params.RequestRetention = retention
+	scheduled, err := fsrs.NewFSRS(params).Next(state, now, fsrs.Rating(input.Rating))
 	if err != nil {
 		writeError(w, 400, err)
 		return
@@ -428,17 +438,62 @@ func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"card": card, "review": logEntry, "dueAt": dueAfter})
 }
 
+func (s *Server) desiredRetention() (float64, error) {
+	var setting model.AppSetting
+	if err := s.db.First(&setting, "key = ?", "desiredRetention").Error; err != nil {
+		return 0, err
+	}
+	value, err := strconv.ParseFloat(setting.Value, 64)
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
+}
+
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	retention, err := s.desiredRetention()
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]float64{"desiredRetention": retention})
+}
+
+func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		DesiredRetention float64 `json:"desiredRetention"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if math.IsNaN(input.DesiredRetention) || math.IsInf(input.DesiredRetention, 0) || input.DesiredRetention < 0.70 || input.DesiredRetention > 0.97 {
+		writeError(w, 400, errors.New("desiredRetention must be between 0.70 and 0.97"))
+		return
+	}
+	var setting model.AppSetting
+	if err := s.db.First(&setting, "key = ?", "desiredRetention").Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	setting.Value = strconv.FormatFloat(input.DesiredRetention, 'f', 2, 64)
+	if err := s.db.Save(&setting).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]float64{"desiredRetention": input.DesiredRetention})
+}
+
 func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 	type historyItem struct {
-		ID         uint       `json:"id"`
-		CardID     uint       `json:"cardId"`
-		Rating     int        `json:"rating"`
-		Response   string     `json:"response"`
-		ReviewedAt time.Time  `json:"reviewedAt"`
-		Question   string     `json:"question"`
-		Excerpt    string     `json:"excerpt"`
-		NoteTitle  string     `json:"noteTitle"`
-		NoteText   string     `json:"-"`
+		ID          uint      `json:"id"`
+		CardID      uint      `json:"cardId"`
+		Rating      int       `json:"rating"`
+		Response    string    `json:"response"`
+		ReviewedAt  time.Time `json:"reviewedAt"`
+		Question    string    `json:"question"`
+		Excerpt     string    `json:"excerpt"`
+		NoteTitle   string    `json:"noteTitle"`
+		NoteText    string    `json:"-"`
 		StartOffset int       `json:"-"`
 		EndOffset   int       `json:"-"`
 	}
@@ -474,17 +529,17 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		Count  int `json:"count"`
 	}
 	type recentItem struct {
-		ID         uint      `json:"id"`
-		CardID     uint      `json:"cardId"`
-		Rating     int       `json:"rating"`
-		Response   string    `json:"response"`
-		ReviewedAt time.Time `json:"reviewedAt"`
-		Question   string    `json:"question"`
-		Excerpt    string    `json:"excerpt"`
-		NoteTitle  string    `json:"noteTitle"`
-		NoteText   string    `json:"-"`
-		StartOffset int      `json:"-"`
-		EndOffset   int      `json:"-"`
+		ID          uint      `json:"id"`
+		CardID      uint      `json:"cardId"`
+		Rating      int       `json:"rating"`
+		Response    string    `json:"response"`
+		ReviewedAt  time.Time `json:"reviewedAt"`
+		Question    string    `json:"question"`
+		Excerpt     string    `json:"excerpt"`
+		NoteTitle   string    `json:"noteTitle"`
+		NoteText    string    `json:"-"`
+		StartOffset int       `json:"-"`
+		EndOffset   int       `json:"-"`
 	}
 	now := time.Now()
 	location := now.Location()
@@ -565,7 +620,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average},
-		"days": days, "ratings": ratings, "recent": recent,
+		"days":    days, "ratings": ratings, "recent": recent,
 	})
 }
 

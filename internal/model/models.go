@@ -66,3 +66,9 @@ type ReviewLog struct {
 	FSRSLog    string     `json:"fsrsLog,omitempty" gorm:"type:text"`
 	CreatedAt  time.Time  `json:"createdAt"`
 }
+
+type AppSetting struct {
+	Key       string    `json:"key" gorm:"primaryKey;size:100"`
+	Value     string    `json:"value" gorm:"type:text;not null"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
