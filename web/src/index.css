@@ -179,3 +179,40 @@
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
+
+/* The app uses a warm, hand-picked light palette. Keep it intact and remap
+   those utility colors only when the user explicitly enables dark mode. */
+html.dark body,
+html.dark main {
+  background-color: #171a16 !important;
+  color: #e0e3d9 !important;
+}
+html.dark [class*="bg-[#"] { background-color: #22251f !important; }
+html.dark [class*="bg-white"] { background-color: #252821 !important; }
+html.dark [class~="bg-[#f4f4ef]"] { background-color: #171a16 !important; }
+html.dark [class~="bg-[#fbfbf8]"],
+html.dark [class~="bg-[#fcfcfa]"],
+html.dark [class~="bg-[#f8f9f5]"],
+html.dark [class~="bg-[#f3f4ef]"],
+html.dark [class~="bg-[#f0f2ec]"] { background-color: #1d201b !important; }
+html.dark [class~="bg-[#30352a]"] { background-color: #3b4434 !important; }
+html.dark [class~="bg-[#e9eee3]"],
+html.dark [class~="bg-[#e7ebe1]"],
+html.dark [class~="bg-[#edf0e8]"] { background-color: #343c2f !important; }
+html.dark [class*="text-[#"] { color: #d1d5ca !important; }
+html.dark [class~="text-white"] { color: #f7f7f2 !important; }
+html.dark [class*="border-[#"] { border-color: #383d34 !important; }
+html.dark [class*="placeholder:text-[#"]::placeholder { color: #81877b !important; }
+html.dark .markdown-preview h1,
+html.dark .markdown-preview h2,
+html.dark .markdown-preview h3,
+html.dark .markdown-preview h4 { color: #e2e5dc; }
+html.dark .markdown-preview blockquote { border-color: #47513f; color: #a7ad9d; }
+html.dark .markdown-preview :not(pre) > code,
+html.dark .markdown-preview pre,
+html.dark .markdown-preview th { background: #292d26; }
+html.dark .markdown-preview td,
+html.dark .markdown-preview th { border-color: #383d34; }
+html.dark .markdown-preview hr { border-color: #383d34; }
+html.dark .markdown-preview a { color: #a9c393; }
+html.dark .markdown-preview .annotation-mark { background: #51492d; }

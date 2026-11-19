@@ -4,10 +4,13 @@ import {
   Layers3,
   Settings2,
   Sparkles,
+  Moon,
+  Sun,
 } from "lucide-react"
 import { NavLink, Outlet } from "react-router"
 import { useEffect, useState } from "react"
 import { api, type Stats } from "@/lib/api"
+import { useTheme } from "@/components/theme-provider"
 
 const navigation = [
   { to: "/notes", label: "笔记", icon: BookOpenText },
@@ -19,6 +22,7 @@ const navigation = [
 
 export function AppShell() {
   const [due, setDue] = useState(0)
+  const { theme, setTheme } = useTheme()
 
   useEffect(() => {
     api<Stats>("/api/reviews/stats").then((stats) => setDue(stats.due)).catch(() => setDue(0))
@@ -36,7 +40,7 @@ export function AppShell() {
             <div className="grid size-9 place-items-center rounded-xl bg-[#30352a] text-[#f5f4eb]"><Layers3 size={18} /></div>
             <div><p className="text-[15px] font-semibold tracking-tight">recall box</p><p className="text-[10px] tracking-[0.14em] text-[#999b91]">LOCAL KNOWLEDGE STUDIO</p></div>
           </div>
-          <span className="hidden items-center gap-2 rounded-full border border-[#e3e4dd] bg-white/70 px-3 py-1.5 text-[11px] text-[#777b6f] sm:flex"><span className="size-1.5 rounded-full bg-[#7e966e]" />仅保存在本机</span>
+          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"} title={theme === "dark" ? "浅色模式" : "深色模式"} className="grid size-9 place-items-center rounded-xl border border-[#e3e4dd] bg-white/70 text-[#74796d] transition hover:bg-white"><span className="dark:hidden"><Moon size={16} /></span><span className="hidden dark:block"><Sun size={16} /></span></button>
         </header>
 
         <div className="grid min-h-0 flex-1 gap-4 pt-5 lg:grid-cols-[205px_minmax(0,1fr)]">
@@ -50,7 +54,6 @@ export function AppShell() {
                 {item.badge && due > 0 && <span className="ml-auto rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#667858]">{due}</span>}
               </NavLink>
             })}
-            <div className="mt-auto hidden rounded-xl border border-[#e5e6df] bg-[#fbfbf8] p-3.5 lg:block"><p className="text-[11px] font-medium text-[#6a6f63]">本地知识空间</p><p className="mt-1.5 text-[10px] leading-4 text-[#999c91]">笔记和复习记录保存在这台设备上。</p></div>
           </aside>
 
           <section className="min-h-0 min-w-0"><Outlet /></section>
