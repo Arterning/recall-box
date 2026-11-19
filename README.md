@@ -1,20 +1,26 @@
-# Recall Box backend
+# Recall Box
 
-Local-only Go API for the React/Vite frontend. Data is stored in SQLite under
-the current user's config directory (`%AppData%/RecallBox/recall-box.db` on
-Windows). Set `RECALL_BOX_DATA_DIR` to use another directory.
+Local Go desktop application with a React/Vite frontend and SQLite storage.
+Data is stored in the current user's config directory
+(`%AppData%/RecallBox/recall-box.db` on Windows). Set `RECALL_BOX_DATA_DIR` to
+use another directory.
 
-## Run
+## Development
 
 ```powershell
 go run ./cmd/server
 ```
 
-The app listens on `127.0.0.1:34115`, opens in the browser, and serves the
-embedded React app and API from the same address. To package an exe after
-changing the frontend, run `./build.ps1`. The SQLite driver is pure Go, so the
-build does not need a C compiler. Set `RECALL_BOX_NO_BROWSER=1` to suppress
-automatic browser launch.
+This starts the HTTP backend on an available loopback port and opens the app in
+the browser. The root `dev.bat` runs the same command. Set
+`RECALL_BOX_NO_BROWSER=1` to suppress automatic browser launch.
+
+## Desktop build
+
+Run `./build.ps1` to embed the React frontend and build `dist/recall-box.exe`
+from `cmd/desktop`. The executable starts the HTTP backend on an available
+local port and opens a Wails window; frontend and backend continue to
+communicate over HTTP. Windows requires the WebView2 runtime.
 
 GORM `AutoMigrate` creates and adds columns/tables at startup; it does not
 remove columns when models change.
