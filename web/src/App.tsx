@@ -5,6 +5,7 @@ import { CardsPage } from "@/pages/cards-page"
 import { PlaceholderPage } from "@/pages/placeholder-page"
 import { ReviewPage } from "@/pages/review-page"
 import { ReviewHistoryPage } from "@/pages/review-history-page"
+import { StatisticsPage } from "@/pages/statistics-page"
 
 export function App() {
   return (
@@ -16,7 +17,7 @@ export function App() {
           <Route path="review" element={<ReviewPage />} />
           <Route path="review/history" element={<ReviewHistoryPage />} />
           <Route path="cards" element={<CardsPage />} />
-          <Route path="statistics" element={<PlaceholderPage page="statistics" />} />
+          <Route path="statistics" element={<StatisticsPage />} />
           <Route path="settings" element={<PlaceholderPage page="settings" />} />
           <Route path="*" element={<PlaceholderPage page="not-found" />} />
         </Route>

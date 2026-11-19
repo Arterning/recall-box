@@ -47,6 +47,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
 	s.mux.HandleFunc("POST /api/cards/{id}/review", s.reviewCard)
 	s.mux.HandleFunc("GET /api/reviews/history", s.reviewHistory)
+	s.mux.HandleFunc("GET /api/reviews/overview", s.reviewOverview)
 	s.mux.HandleFunc("GET /api/reviews/stats", s.reviewStats)
 }
 
@@ -460,6 +461,112 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		history[i].Excerpt = clozeExcerpt(history[i].NoteText, history[i].StartOffset, history[i].EndOffset)
 	}
 	writeJSON(w, 200, history)
+}
+
+func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
+	type daySummary struct {
+		Date  string `json:"date"`
+		Count int    `json:"count"`
+		Good  int    `json:"good"`
+	}
+	type ratingSummary struct {
+		Rating int `json:"rating"`
+		Count  int `json:"count"`
+	}
+	type recentItem struct {
+		ID         uint      `json:"id"`
+		CardID     uint      `json:"cardId"`
+		Rating     int       `json:"rating"`
+		Response   string    `json:"response"`
+		ReviewedAt time.Time `json:"reviewedAt"`
+		Question   string    `json:"question"`
+		Excerpt    string    `json:"excerpt"`
+		NoteTitle  string    `json:"noteTitle"`
+		NoteText   string    `json:"-"`
+		StartOffset int      `json:"-"`
+		EndOffset   int      `json:"-"`
+	}
+	now := time.Now()
+	location := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
+	firstDay := today.AddDate(0, 0, -29)
+	var totalReviews int64
+	if err := s.db.Model(&model.ReviewLog{}).Count(&totalReviews).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	var reviewedToday int64
+	if err := s.db.Model(&model.ReviewLog{}).Where("reviewed_at >= ?", today).Count(&reviewedToday).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	var notes, cards, due int64
+	if err := s.db.Model(&model.Note{}).Count(&notes).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Count(&cards).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := s.db.Model(&model.Card{}).Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Where("cards.due_at IS NULL OR cards.due_at <= ?", now).Count(&due).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	var average float64
+	if totalReviews > 0 {
+		if err := s.db.Model(&model.ReviewLog{}).Select("AVG(rating)").Scan(&average).Error; err != nil {
+			writeError(w, 500, err)
+			return
+		}
+	}
+	days := make([]daySummary, 30)
+	dayIndexes := make(map[string]int, 30)
+	for i := range days {
+		date := firstDay.AddDate(0, 0, i).Format("2006-01-02")
+		days[i] = daySummary{Date: date}
+		dayIndexes[date] = i
+	}
+	var recentLogs []model.ReviewLog
+	if err := s.db.Select("rating, reviewed_at").Where("reviewed_at >= ?", firstDay).Find(&recentLogs).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	for _, log := range recentLogs {
+		index, ok := dayIndexes[log.ReviewedAt.In(location).Format("2006-01-02")]
+		if !ok {
+			continue
+		}
+		days[index].Count++
+		if log.Rating >= 3 {
+			days[index].Good++
+		}
+	}
+	var ratingRows []ratingSummary
+	if err := s.db.Table("review_logs").Select("rating, COUNT(*) AS count").Group("rating").Scan(&ratingRows).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	ratings := map[string]int64{"1": 0, "2": 0, "3": 0, "4": 0}
+	for _, row := range ratingRows {
+		ratings[strconv.Itoa(row.Rating)] = int64(row.Count)
+	}
+	var recent []recentItem
+	if err := s.db.Table("review_logs").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
+		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
+		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
+		Order("review_logs.reviewed_at desc").Limit(8).Scan(&recent).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	for i := range recent {
+		recent[i].Excerpt = clozeExcerpt(recent[i].NoteText, recent[i].StartOffset, recent[i].EndOffset)
+	}
+	writeJSON(w, 200, map[string]any{
+		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average},
+		"days": days, "ratings": ratings, "recent": recent,
+	})
 }
 
 func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {
