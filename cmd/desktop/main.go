@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	backend, err := appserver.Start()
+	backend, err := appserver.StartEphemeral()
 	if err != nil {
 		log.Fatal(err)
 	}

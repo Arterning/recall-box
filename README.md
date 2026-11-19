@@ -12,8 +12,9 @@ go run ./cmd/server
 ```
 
 This starts the HTTP backend on an available loopback port and opens the app in
-the browser. The root `dev.bat` runs the same command. Set
-`RECALL_BOX_NO_BROWSER=1` to suppress automatic browser launch.
+the browser. The root `dev.bat` pins the backend to `127.0.0.1:34115` to match
+the Vite proxy in `web/vite.config.ts`. Set `RECALL_BOX_NO_BROWSER=1` to
+suppress automatic browser launch.
 
 ## Desktop build
 

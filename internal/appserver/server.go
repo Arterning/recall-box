@@ -28,8 +28,18 @@ type Server struct {
 	closeErr  error
 }
 
-// Start opens the local database and binds an ephemeral loopback port.
+// Start opens the local database and optionally pins the port through
+// RECALL_BOX_PORT for the Vite development proxy.
 func Start() (*Server, error) {
+	return StartOnPort(os.Getenv("RECALL_BOX_PORT"))
+}
+
+// StartEphemeral always requests an available loopback port.
+func StartEphemeral() (*Server, error) {
+	return StartOnPort("")
+}
+
+func StartOnPort(port string) (*Server, error) {
 	dbPath, err := databasePath()
 	if err != nil {
 		return nil, err
@@ -38,7 +48,10 @@ func Start() (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if port == "" {
+		port = "0"
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
 	if err != nil {
 		sqlDB, _ := db.DB()
 		if sqlDB != nil {
