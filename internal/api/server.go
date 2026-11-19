@@ -42,6 +42,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/notes/{id}/annotations", s.listAnnotations)
 	s.mux.HandleFunc("POST /api/notes/{id}/annotations", s.createAnnotation)
 	s.mux.HandleFunc("DELETE /api/annotations/{id}", s.deleteAnnotation)
+	s.mux.HandleFunc("GET /api/cards", s.listAllCards)
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
 	s.mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
 	s.mux.HandleFunc("POST /api/cards/{id}/review", s.reviewCard)
@@ -255,6 +256,30 @@ func (s *Server) listAnnotations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, annotations)
+}
+
+func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
+	var cards []model.Card
+	query := s.db.Joins("JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
+	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
+		like := "%" + strings.ReplaceAll(strings.ReplaceAll(search, "%", "\\%"), "_", "\\_") + "%"
+		query = query.Where("cards.question LIKE ? OR cards.answer LIKE ? OR cards.excerpt LIKE ? OR notes.title LIKE ?", like, like, like, like)
+	}
+	if err := query.Order("cards.due_at asc").Find(&cards).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	type cardItem struct {
+		model.Card
+		NoteTitle  string `json:"noteTitle"`
+		NoteFormat string `json:"noteFormat"`
+	}
+	result := make([]cardItem, 0, len(cards))
+	for _, card := range cards {
+		card = normalizeCard(card)
+		result = append(result, cardItem{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
+	}
+	writeJSON(w, 200, result)
 }
 
 func (s *Server) createAnnotation(w http.ResponseWriter, r *http.Request) {

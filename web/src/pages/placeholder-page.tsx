@@ -1,8 +1,7 @@
-import { ArrowRight, BookOpenText, ChartNoAxesColumnIncreasing, Layers3, Settings2 } from "lucide-react"
+import { ArrowRight, BookOpenText, ChartNoAxesColumnIncreasing, Settings2 } from "lucide-react"
 import { Link } from "react-router"
 
 const pages = {
-  cards: { title: "卡片库", eyebrow: "Library", description: "集中浏览、筛选和整理所有复习卡片。", icon: Layers3 },
   statistics: { title: "复习统计", eyebrow: "Insights", description: "查看复习趋势、记忆保持情况和每日完成量。", icon: ChartNoAxesColumnIncreasing },
   settings: { title: "设置", eyebrow: "Preferences", description: "管理复习目标、FSRS 参数、数据备份与本地存储。", icon: Settings2 },
   "not-found": { title: "页面不存在", eyebrow: "Not found", description: "这个页面还没有创建，先回到笔记继续整理知识。", icon: BookOpenText },
