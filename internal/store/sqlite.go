@@ -19,11 +19,14 @@ func Open(databasePath string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
-	if err := db.AutoMigrate(&model.Note{}, &model.Card{}, &model.ReviewLog{}); err != nil {
+	if err := db.AutoMigrate(&model.Note{}, &model.Card{}, &model.Annotation{}, &model.ReviewLog{}); err != nil {
 		return nil, fmt.Errorf("auto migrate database: %w", err)
 	}
 	if err := db.Model(&model.Card{}).Where("question = ? AND prompt <> ?", "", "").Update("question", gorm.Expr("prompt")).Error; err != nil {
 		return nil, fmt.Errorf("migrate legacy card questions: %w", err)
+	}
+	if err := db.Model(&model.Note{}).Where("format <> ?", "markdown").Update("format", "markdown").Error; err != nil {
+		return nil, fmt.Errorf("migrate notes to markdown format: %w", err)
 	}
 	return db, nil
 }

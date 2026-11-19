@@ -22,6 +22,17 @@ export type Card = {
   noteFormat?: "markdown" | "text"
 }
 
+export type Annotation = {
+  id: number
+  noteId: number
+  excerpt: string
+  startOffset: number
+  endOffset: number
+  comment: string
+  anchorValid: boolean
+  createdAt: string
+}
+
 export type Stats = { notes: number; cards: number; due: number; reviewedToday: number }
 
 export const emptyNote: Note = {

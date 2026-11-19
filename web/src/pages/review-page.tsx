@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react"
-import { ArrowLeft, Check, ChevronRight, Clock3, LoaderCircle, Sparkles } from "lucide-react"
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Clock3, LoaderCircle, Sparkles } from "lucide-react"
 import { Link } from "react-router"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -14,6 +14,7 @@ const ratings = [
 
 export function ReviewPage() {
   const [dueCards, setDueCards] = useState<Card[]>([])
+  const [index, setIndex] = useState(0)
   const [stats, setStats] = useState<Stats>({ notes: 0, cards: 0, due: 0, reviewedToday: 0 })
   const [response, setResponse] = useState("")
   const [showReference, setShowReference] = useState(false)
@@ -28,13 +29,20 @@ export function ReviewPage() {
     ])
     setDueCards(cards)
     setStats(summary)
+    return cards
   }, [])
 
   useEffect(() => {
     refresh().catch((cause: unknown) => setError(toErrorMessage(cause, "加载复习卡片失败"))).finally(() => setLoading(false))
   }, [refresh])
 
-  const current = dueCards[0]
+  const current = dueCards[index]
+
+  const selectCard = (next: number) => {
+    setIndex(next)
+    setResponse("")
+    setShowReference(false)
+  }
 
   const rate = async (rating: number) => {
     if (!current) return
@@ -44,7 +52,8 @@ export function ReviewPage() {
       await api(`/api/cards/${current.id}/review`, { method: "POST", body: JSON.stringify({ rating }) })
       setResponse("")
       setShowReference(false)
-      await refresh()
+      const remaining = await refresh()
+      setIndex((currentIndex) => Math.min(currentIndex, Math.max(0, remaining.length - 1)))
     } catch (cause) {
       setError(toErrorMessage(cause, "提交评分失败"))
     } finally {
@@ -57,7 +66,7 @@ export function ReviewPage() {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a957e]">Daily review</p><h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#35392f]">今日复习</h1><p className="mt-1 text-sm text-[#898d82]">先回答问题，再对照笔记中的重点。</p></div><div className="flex gap-2"><Stat label="待复习" value={stats.due} /><Stat label="今日完成" value={stats.reviewedToday} /></div></div>
       {error && <div className="mb-4 rounded-xl border border-[#efd5ce] bg-[#fff5f1] px-4 py-2.5 text-sm text-[#9b5748]">{error}</div>}
       <section className="overflow-hidden rounded-[22px] border border-[#e4e6dd] bg-white shadow-[0_26px_80px_-55px_rgba(45,51,38,.42)]">
-        <div className="flex items-center justify-between border-b border-[#eeefe9] px-5 py-4"><Link to="/notes" className="flex items-center gap-1.5 text-xs text-[#83877b] hover:text-[#44483e]"><ArrowLeft size={15} />返回笔记</Link><span className="text-[11px] text-[#a1a398]">{current ? `${dueCards.length} 张待复习` : "队列已清空"}</span></div>
+        <div className="flex items-center justify-between border-b border-[#eeefe9] px-5 py-4"><Link to="/notes" className="flex items-center gap-1.5 text-xs text-[#83877b] hover:text-[#44483e]"><ArrowLeft size={15} />返回笔记</Link>{current ? <div className="flex items-center gap-2"><span className="mr-1 text-[11px] text-[#82867b]">卡片 {index + 1} / {dueCards.length}</span><button disabled={index === 0} onClick={() => selectCard(index - 1)} aria-label="上一张卡片" className="grid size-8 place-items-center rounded-lg border border-[#e5e6df] text-[#777b70] hover:bg-[#f4f5f0] disabled:opacity-35"><ChevronLeft size={15} /></button><button disabled={index >= dueCards.length - 1} onClick={() => selectCard(index + 1)} aria-label="下一张卡片" className="grid size-8 place-items-center rounded-lg border border-[#e5e6df] text-[#777b70] hover:bg-[#f4f5f0] disabled:opacity-35"><ChevronRight size={15} /></button></div> : <span className="text-[11px] text-[#a1a398]">队列已清空</span>}</div>
         {loading ? <div className="flex min-h-80 items-center justify-center gap-2 text-sm text-[#8e9287]"><LoaderCircle size={17} className="animate-spin" />正在加载复习队列…</div> : current ? <div className="px-6 py-7 sm:px-10 sm:py-9">
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.13em] text-[#86927b]"><Sparkles size={14} /> Active recall <span className="ml-auto max-w-[55%] truncate tracking-normal text-[#aaaca2]">{current.noteTitle || "重点卡片"}</span></div>
           <div className="mt-8"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#a7aa9f]">请回答</p><h2 className="mt-3 whitespace-pre-wrap text-xl font-medium leading-[1.65] tracking-[-0.02em] text-[#35392f]">{current.question || current.answer || current.excerpt}</h2><textarea value={response} onChange={(event) => setResponse(event.target.value)} placeholder="在这里写下你的回答…" rows={4} className="mt-5 w-full resize-y rounded-xl border border-[#e7e9e1] bg-[#fcfcfa] px-4 py-3 text-sm leading-6 text-[#45493f] outline-none placeholder:text-[#b4b6ad] focus:border-[#bdc9b3]" /></div>

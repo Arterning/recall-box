@@ -161,3 +161,21 @@
 .markdown-preview td { border: 1px solid #e5e7df; padding: 0.5rem 0.7rem; text-align: left; }
 .markdown-preview th { background: #f6f7f3; font-weight: 600; }
 .markdown-preview hr { margin: 1.5rem 0; border-color: #e7e9e1; }
+.markdown-preview .card-mark {
+  border-radius: 0.16rem;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #99ad86;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.markdown-preview .annotation-mark {
+  border-radius: 0.16rem;
+  background: #f8f0cf;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #c4ac5f;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}

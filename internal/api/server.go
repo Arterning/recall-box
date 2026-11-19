@@ -39,6 +39,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/notes/{id}", s.deleteNote)
 	s.mux.HandleFunc("GET /api/notes/{id}/cards", s.listCards)
 	s.mux.HandleFunc("POST /api/notes/{id}/cards", s.createCard)
+	s.mux.HandleFunc("GET /api/notes/{id}/annotations", s.listAnnotations)
+	s.mux.HandleFunc("POST /api/notes/{id}/annotations", s.createAnnotation)
+	s.mux.HandleFunc("DELETE /api/annotations/{id}", s.deleteAnnotation)
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
 	s.mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
 	s.mux.HandleFunc("POST /api/cards/{id}/review", s.reviewCard)
@@ -116,8 +119,26 @@ func (s *Server) updateNote(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			for _, card := range cards {
-				start, end, found := findAnchor(*input.Content, card.Excerpt, card.StartOffset)
+				anchor := card.SourceText
+				if anchor == "" {
+					anchor = card.Excerpt
+				}
+				start, end, found := findAnchor(*input.Content, anchor, card.StartOffset)
 				if err := tx.Model(&card).Updates(map[string]any{"start_offset": start, "end_offset": end, "anchor_valid": found}).Error; err != nil {
+					return err
+				}
+			}
+			var annotations []model.Annotation
+			if err := tx.Where("note_id = ?", note.ID).Find(&annotations).Error; err != nil {
+				return err
+			}
+			for _, annotation := range annotations {
+				anchor := annotation.SourceText
+				if anchor == "" {
+					anchor = annotation.Excerpt
+				}
+				start, end, found := findAnchor(*input.Content, anchor, annotation.StartOffset)
+				if err := tx.Model(&annotation).Updates(map[string]any{"start_offset": start, "end_offset": end, "anchor_valid": found}).Error; err != nil {
 					return err
 				}
 			}
@@ -140,6 +161,9 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("note_id = ?", note.ID).Delete(&model.Card{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("note_id = ?", note.ID).Delete(&model.Annotation{}).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&note).Error
@@ -166,6 +190,7 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Excerpt     string `json:"excerpt"`
+		SourceText  string `json:"sourceText"`
 		StartOffset int    `json:"startOffset"`
 		EndOffset   int    `json:"endOffset"`
 		Question    string `json:"question"`
@@ -188,7 +213,10 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, errors.New("selection offsets exceed note content"))
 		return
 	}
-	if input.EndOffset == input.StartOffset || len(utf16.Encode([]rune(input.Excerpt))) != input.EndOffset-input.StartOffset || sliceUTF16(note.Content, input.StartOffset, input.EndOffset) != input.Excerpt {
+	if input.SourceText == "" {
+		input.SourceText = input.Excerpt
+	}
+	if input.EndOffset == input.StartOffset || len(utf16.Encode([]rune(input.SourceText))) != input.EndOffset-input.StartOffset || sliceUTF16(note.Content, input.StartOffset, input.EndOffset) != input.SourceText {
 		writeError(w, 400, errors.New("selection text and offsets do not match"))
 		return
 	}
@@ -204,7 +232,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	if answer == "" {
 		answer = input.Excerpt
 	}
-	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
+	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
 	now := time.Now()
 	state, err := json.Marshal(fsrs.NewCard(now))
 	if err != nil {
@@ -218,6 +246,67 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 201, card)
+}
+
+func (s *Server) listAnnotations(w http.ResponseWriter, r *http.Request) {
+	var annotations []model.Annotation
+	if err := s.db.Where("note_id = ?", r.PathValue("id")).Order("created_at desc").Find(&annotations).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, annotations)
+}
+
+func (s *Server) createAnnotation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Excerpt     string `json:"excerpt"`
+		SourceText  string `json:"sourceText"`
+		StartOffset int    `json:"startOffset"`
+		EndOffset   int    `json:"endOffset"`
+		Comment     string `json:"comment"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	if strings.TrimSpace(input.Excerpt) == "" || strings.TrimSpace(input.Comment) == "" || input.StartOffset < 0 || input.EndOffset <= input.StartOffset {
+		writeError(w, 400, errors.New("selected text, comment, and valid offsets are required"))
+		return
+	}
+	if input.SourceText == "" {
+		input.SourceText = input.Excerpt
+	}
+	if len(utf16.Encode([]rune(input.SourceText))) != input.EndOffset-input.StartOffset {
+		writeError(w, 400, errors.New("source text and offsets do not match"))
+		return
+	}
+	var note model.Note
+	if err := s.db.First(&note, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	if sliceUTF16(note.Content, input.StartOffset, input.EndOffset) != input.SourceText {
+		writeError(w, 400, errors.New("source text does not match the note"))
+		return
+	}
+	annotation := model.Annotation{NoteID: note.ID, Excerpt: input.Excerpt, SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, Comment: strings.TrimSpace(input.Comment), AnchorValid: true}
+	if err := s.db.Create(&annotation).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 201, annotation)
+}
+
+func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
+	result := s.db.Delete(&model.Annotation{}, r.PathValue("id"))
+	if result.Error != nil {
+		writeError(w, 500, result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
+		writeError(w, 404, errors.New("annotation not found"))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
@@ -365,9 +454,7 @@ func notFoundOrError(w http.ResponseWriter, err error) {
 	}
 }
 func normalizeFormat(format string) string {
-	if strings.EqualFold(strings.TrimSpace(format), "txt") || strings.EqualFold(strings.TrimSpace(format), "text") {
-		return "text"
-	}
+	_ = format
 	return "markdown"
 }
 

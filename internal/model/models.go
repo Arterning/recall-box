@@ -26,6 +26,7 @@ type Card struct {
 	NoteID      uint   `json:"noteId" gorm:"not null;index"`
 	Note        Note   `json:"-"`
 	Excerpt     string `json:"excerpt" gorm:"type:text;not null"`
+	SourceText  string `json:"-" gorm:"type:text;not null;default:''"`
 	StartOffset int    `json:"startOffset" gorm:"not null;default:0"`
 	EndOffset   int    `json:"endOffset" gorm:"not null;default:0"`
 	AnchorValid bool   `json:"anchorValid" gorm:"not null;default:true"`
@@ -38,6 +39,20 @@ type Card struct {
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+type Annotation struct {
+	ID          uint           `json:"id" gorm:"primaryKey"`
+	NoteID      uint           `json:"noteId" gorm:"not null;index"`
+	Excerpt     string         `json:"excerpt" gorm:"type:text;not null"`
+	SourceText  string         `json:"-" gorm:"type:text;not null;default:''"`
+	StartOffset int            `json:"startOffset" gorm:"not null;default:0"`
+	EndOffset   int            `json:"endOffset" gorm:"not null;default:0"`
+	Comment     string         `json:"comment" gorm:"type:text;not null;default:''"`
+	AnchorValid bool           `json:"anchorValid" gorm:"not null;default:true"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type ReviewLog struct {

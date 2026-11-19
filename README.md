@@ -23,21 +23,24 @@ remove columns when models change.
 
 - `GET /api/health`
 - `GET /api/notes?q=search`
-- `POST /api/notes` — `{ "title": "...", "content": "...", "format": "markdown|text", "tags": "..." }`
+- `POST /api/notes` — `{ "title": "...", "content": "...", "format": "markdown", "tags": "..." }`
 - `GET /api/notes/{id}`
 - `PUT /api/notes/{id}` — partial fields: `title`, `content`, `format`, `tags`
 - `DELETE /api/notes/{id}` — soft delete
 - `GET /api/notes/{id}/cards`
-- `POST /api/notes/{id}/cards` — `{ "excerpt": "...", "startOffset": 0, "endOffset": 10, "prompt": "", "answer": "" }`
+- `POST /api/notes/{id}/cards` — `{ "excerpt": "...", "sourceText": "...", "startOffset": 0, "endOffset": 10, "question": "...", "answer": "..." }`
+- `GET /api/notes/{id}/annotations`
+- `POST /api/notes/{id}/annotations` — selected text, source offsets, and comment
+- `DELETE /api/annotations/{id}`
 - `DELETE /api/cards/{id}`
 - `GET /api/cards/due`
 - `POST /api/cards/{id}/review` — `{ "rating": 1 }`, rating 1–4 maps to Again/Hard/Good/Easy; FSRS updates due date and card state
 - `GET /api/reviews/stats` — note/card totals, due count, reviews today
 
-Card offsets are UTF-16 code-unit offsets into the source text, compatible with
-browser textarea selection APIs. `excerpt` preserves the selected passage even
-if the note is later edited; the backend tries to re-anchor it when the note
-changes and marks anchors it cannot find. Both Markdown and plain text remain
-raw text in SQLite. The Go `go-fsrs/v4` scheduler uses FSRS-6 defaults with 90%
+Card and annotation offsets are UTF-16 code-unit offsets into the Markdown
+source, compatible with browser selection APIs. `excerpt` stores the visible
+selection while `sourceText` stores the Markdown source range. On edits, the
+backend attempts to re-anchor both cards and annotations. Notes are rendered as
+Markdown. The Go `go-fsrs/v4` scheduler uses FSRS-6 defaults with 90%
 desired retention, saves the complete card state and review log, and sets new
 cards due immediately.
