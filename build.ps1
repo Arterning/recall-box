@@ -33,6 +33,6 @@ New-Item -ItemType Directory -Path $embeddedDir -Force | Out-Null
 Copy-Item -Path (Join-Path $webDir "dist\*") -Destination $embeddedDir -Recurse -Force
 
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
-go build -trimpath -ldflags "-s -w" -o (Join-Path $outputDir "recall-box.exe") ./cmd/recall-box
+go build -trimpath -ldflags "-s -w" -o (Join-Path $outputDir "recall-box.exe") ./cmd/server
 if ($LASTEXITCODE -ne 0) { throw "Go build failed." }
 Write-Host "Built $outputDir\recall-box.exe"

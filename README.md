@@ -7,7 +7,7 @@ Windows). Set `RECALL_BOX_DATA_DIR` to use another directory.
 ## Run
 
 ```powershell
-go run ./cmd/recall-box
+go run ./cmd/server
 ```
 
 The app listens on `127.0.0.1:34115`, opens in the browser, and serves the
