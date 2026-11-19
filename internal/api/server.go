@@ -178,6 +178,11 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
+	var note model.Note
+	if err := s.db.First(&note, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
 	var cards []model.Card
 	if err := s.db.Where("note_id = ?", r.PathValue("id")).Order("created_at desc").Find(&cards).Error; err != nil {
 		writeError(w, 500, err)
@@ -185,6 +190,7 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range cards {
 		cards[i] = normalizeCard(cards[i])
+		cards[i].Excerpt = clozeExcerpt(note.Content, cards[i].StartOffset, cards[i].EndOffset)
 	}
 	writeJSON(w, 200, cards)
 }
@@ -232,9 +238,9 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 	}
 	answer := strings.TrimSpace(input.Answer)
 	if answer == "" {
-		answer = input.Excerpt
+		answer = input.SourceText
 	}
-	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
+	card := model.Card{NoteID: note.ID, Excerpt: clozeExcerpt(note.Content, input.StartOffset, input.EndOffset), SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
 	now := time.Now()
 	state, err := json.Marshal(fsrs.NewCard(now))
 	if err != nil {
@@ -278,6 +284,7 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 	result := make([]cardItem, 0, len(cards))
 	for _, card := range cards {
 		card = normalizeCard(card)
+		card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
 		result = append(result, cardItem{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
 	writeJSON(w, 200, result)
@@ -350,6 +357,7 @@ func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 	result := make([]dueCard, 0, len(cards))
 	for _, card := range cards {
 		card = normalizeCard(card)
+		card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
 		result = append(result, dueCard{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
 	writeJSON(w, 200, result)
@@ -429,10 +437,13 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		Question   string     `json:"question"`
 		Excerpt    string     `json:"excerpt"`
 		NoteTitle  string     `json:"noteTitle"`
+		NoteText   string     `json:"-"`
+		StartOffset int       `json:"-"`
+		EndOffset   int       `json:"-"`
 	}
 	var history []historyItem
 	err := s.db.Table("review_logs").
-		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, notes.title AS note_title").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
 		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
 		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
 		Order("review_logs.reviewed_at desc").
@@ -444,6 +455,9 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	if history == nil {
 		history = []historyItem{}
+	}
+	for i := range history {
+		history[i].Excerpt = clozeExcerpt(history[i].NoteText, history[i].StartOffset, history[i].EndOffset)
 	}
 	writeJSON(w, 200, history)
 }
@@ -551,6 +565,33 @@ func sliceUTF16(content string, start, end int) string {
 		return ""
 	}
 	return string(utf16.Decode(units[start:end]))
+}
+
+func clozeExcerpt(content string, start, end int) string {
+	units := utf16.Encode([]rune(content))
+	if start < 0 || end <= start || end > len(units) {
+		return "［选中内容］"
+	}
+	paragraphStart, paragraphEnd := 0, len(units)
+	for i := start - 1; i >= 1; i-- {
+		if units[i-1] == '\n' && units[i] == '\n' {
+			paragraphStart = i + 1
+			break
+		}
+	}
+	for i := end; i < len(units)-1; i++ {
+		if units[i] == '\n' && units[i+1] == '\n' {
+			paragraphEnd = i
+			break
+		}
+	}
+	before := strings.TrimSpace(string(utf16.Decode(units[paragraphStart:start])))
+	after := strings.TrimSpace(string(utf16.Decode(units[end:paragraphEnd])))
+	context := strings.TrimSpace(before + " ［　］ " + after)
+	if context == "［　］" || context == "" {
+		return "［选中内容］"
+	}
+	return context
 }
 
 func normalizeCard(card model.Card) model.Card {
