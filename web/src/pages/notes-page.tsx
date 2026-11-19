@@ -15,6 +15,7 @@ export function NotesPage() {
   const [selection, setSelection] = useState<Selection | null>(null)
   const [draft, setDraft] = useState<CardDraft | null>(null)
   const [annotationDraft, setAnnotationDraft] = useState<string | null>(null)
+  const [pendingAnnotationId, setPendingAnnotationId] = useState<number | null>(null)
   const [view, setView] = useState<"edit" | "preview">("preview")
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -123,7 +124,17 @@ export function NotesPage() {
   const beginAnnotation = () => {
     if (!selection) return
     setDraft(null)
+    setView("preview")
+    const id = -Date.now()
+    setPendingAnnotationId(id)
+    setAnnotations((current) => [{ id, noteId: note.id, excerpt: selection.excerpt, startOffset: selection.start, endOffset: selection.end, comment: "", anchorValid: true, createdAt: new Date().toISOString() }, ...current])
     setAnnotationDraft("")
+  }
+
+  const cancelAnnotation = () => {
+    if (pendingAnnotationId !== null) setAnnotations((current) => current.filter((item) => item.id !== pendingAnnotationId))
+    setPendingAnnotationId(null)
+    setAnnotationDraft(null)
   }
 
   const saveCard = async () => {
@@ -148,7 +159,7 @@ export function NotesPage() {
   }
 
   const saveAnnotation = async () => {
-    if (!selection || !annotationDraft?.trim()) return
+    if (!selection || annotationDraft === null) return
     setBusy(true)
     setError("")
     try {
@@ -157,7 +168,8 @@ export function NotesPage() {
         method: "POST",
         body: JSON.stringify({ excerpt: selection.excerpt, sourceText: selection.sourceText, startOffset: selection.start, endOffset: selection.end, comment: annotationDraft }),
       })
-      setAnnotations((current) => [annotation, ...current])
+      setAnnotations((current) => [annotation, ...current.filter((item) => item.id !== pendingAnnotationId)])
+      setPendingAnnotationId(null)
       setAnnotationDraft(null)
       setSelection(null)
       setToast("批注已保存，原文已划线")
@@ -165,6 +177,23 @@ export function NotesPage() {
       setError(toErrorMessage(cause, "保存批注失败"))
     } finally {
       setBusy(false)
+    }
+  }
+
+  const removeNote = async () => {
+    if (!note.id || !window.confirm(`确定删除笔记“${note.title || "未命名笔记"}”及其批注和复习卡片吗？`)) return
+    setError("")
+    try {
+      await api<void>(`/api/notes/${note.id}`, { method: "DELETE" })
+      setNotes((current) => current.filter((item) => item.id !== note.id))
+      setNote(emptyNote)
+      setCards([])
+      setAnnotations([])
+      setEditing(false)
+      setSelection(null)
+      setToast("笔记已删除")
+    } catch (cause) {
+      setError(toErrorMessage(cause, "删除笔记失败"))
     }
   }
 
@@ -225,7 +254,7 @@ export function NotesPage() {
   const dirty = !note.id || baseline?.content !== note.content || baseline?.title !== note.title || baseline?.tags !== note.tags
 
   return (
-    <div className="grid min-h-[calc(100vh-8.5rem)] gap-4 lg:grid-cols-[230px_minmax(0,1fr)_270px]">
+    <div className="grid min-h-[calc(100vh-8.5rem)] gap-4 lg:h-[calc(100vh-11rem)] lg:min-h-[520px] lg:grid-cols-[230px_minmax(0,1fr)_270px]">
       <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" className="hidden" onChange={(event) => void importFile(event.target.files?.[0])} />
       <aside className="flex min-h-[190px] flex-col rounded-2xl border border-[#e5e6df] bg-[#fbfbf8] p-3.5 lg:min-h-0">
         <div className="flex items-center justify-between px-1 pb-3"><div><p className="text-xs font-semibold text-[#72766b]">我的笔记</p><p className="mt-1 text-[11px] text-[#a0a297]">{notes.length} 篇笔记</p></div><button onClick={createNote} title="新建笔记" className="grid size-8 place-items-center rounded-lg bg-[#30352a] text-white hover:bg-[#41473a]"><Plus size={16} /></button></div>
@@ -236,12 +265,12 @@ export function NotesPage() {
         <button onClick={() => fileRef.current?.click()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#d7d9d0] px-3 py-2.5 text-xs text-[#75796e] hover:border-[#aeb5a5] hover:bg-white"><Upload size={14} />导入 Markdown / TXT</button>
       </aside>
 
-      <section className="flex min-h-[520px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e5e6df] bg-white shadow-[0_12px_36px_-32px_rgba(47,52,40,.35)]">
+      <section className="flex min-h-[520px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e5e6df] bg-white shadow-[0_12px_36px_-32px_rgba(47,52,40,.35)] lg:min-h-0">
         {error && <div className="m-3 flex items-center justify-between rounded-lg border border-[#efd5ce] bg-[#fff5f1] px-3 py-2 text-xs text-[#9b5748]">{error}<button onClick={() => setError("")} aria-label="关闭"><X size={14} /></button></div>}
         {editing || note.id || note.title || note.content ? <>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeefe9] px-5 py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f0f2ec] text-[#7a8870]"><BookOpen size={17} /></div><div className="min-w-0 flex-1"><input value={note.title} onChange={(event) => setNote({ ...note, title: event.target.value })} placeholder="给笔记起个名字" className="w-full bg-transparent text-[15px] font-semibold tracking-tight text-[#34382f] outline-none placeholder:text-[#b2b4aa]" /><p className="mt-0.5 text-[10px] text-[#a4a69d]">{note.id ? `上次修改 ${formatDate(note.updatedAt)}` : "新笔记 · 尚未保存"}</p></div></div>
-            <div className="flex items-center gap-2"><div className="flex rounded-lg bg-[#f3f4ef] p-0.5"><button onClick={() => { setView("edit"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "edit" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><PencilLine size={12} />编辑</button><button onClick={() => { setView("preview"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "preview" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><Eye size={12} />预览</button></div><span className="rounded-lg border border-[#e6e8e0] px-2.5 py-1.5 text-[10px] text-[#85897d]">Markdown</span><button onClick={() => void persistNote().catch((cause: unknown) => setError(toErrorMessage(cause, "保存失败")))} disabled={saving || !dirty} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#41473a] disabled:cursor-default disabled:bg-[#eef0e9] disabled:text-[#8d9185]">{saving ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}{saving ? "保存中" : dirty ? "保存" : "已保存"}</button></div>
+            <div className="flex items-center gap-2"><div className="flex rounded-lg bg-[#f3f4ef] p-0.5"><button onClick={() => { setView("edit"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "edit" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><PencilLine size={12} />编辑</button><button onClick={() => { setView("preview"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "preview" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><Eye size={12} />预览</button></div>{note.id > 0 && <button onClick={() => void removeNote()} className="flex items-center gap-1.5 rounded-lg border border-[#f0dcd6] px-3 py-2 text-xs font-medium text-[#a75e4e] hover:bg-[#fff5f1]"><Trash2 size={13} />删除</button>}<button onClick={() => void persistNote().catch((cause: unknown) => setError(toErrorMessage(cause, "保存失败")))} disabled={saving || !dirty} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#41473a] disabled:cursor-default disabled:bg-[#eef0e9] disabled:text-[#8d9185]">{saving ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}{saving ? "保存中" : dirty ? "保存" : "已保存"}</button></div>
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between px-6 pt-4 text-[10px] text-[#a6a89e]"><span>{view === "edit" ? "Markdown 编辑器 · 选中原文后可批注或创建问答卡" : "预览 · 选择一段内容添加批注或复习卡片"}</span><span>{view === "edit" ? "Ctrl / ⌘ + S 保存" : "点击“编辑”继续修改"}</span></div>
@@ -254,7 +283,7 @@ export function NotesPage() {
       <aside className="flex min-h-[260px] flex-col rounded-2xl border border-[#e5e6df] bg-[#fbfbf8] p-4 lg:min-h-0">
         <div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-[#686d61]">重点与批注</p><p className="mt-1 text-[11px] text-[#a0a297]">当前笔记的标记</p></div><span className="grid size-8 place-items-center rounded-lg bg-[#edf0e8] text-[#7c896f]"><Highlighter size={15} /></span></div>
         {draft && <div className="mt-4 rounded-xl border border-[#dfe5d7] bg-white p-3.5 shadow-sm"><div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#5d6b53]">新建复习卡</p><button onClick={() => setDraft(null)} aria-label="关闭"><X size={14} className="text-[#9da095]" /></button></div><label className="mt-3 block text-[10px] font-medium text-[#8b8e83]">复习时看到的问题<textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} rows={3} className="mt-1.5 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#bdc9b3]" /></label><label className="mt-2.5 block text-[10px] font-medium text-[#8b8e83]">参考答案<textarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} rows={3} className="mt-1.5 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#bdc9b3]" /></label><button disabled={busy || !draft.question.trim() || !draft.answer.trim()} onClick={() => void saveCard()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#30352a] py-2.5 text-xs font-medium text-white hover:bg-[#41473a] disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={13} /> : <Plus size={13} />}创建复习卡</button></div>}
-        {annotationDraft !== null && <div className="mt-4 rounded-xl border border-[#e8dfc8] bg-white p-3.5 shadow-sm"><div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#887b58]">添加批注</p><button onClick={() => setAnnotationDraft(null)} aria-label="关闭"><X size={14} className="text-[#9da095]" /></button></div><p className="mt-2 line-clamp-3 border-l-2 border-[#d8c98d] pl-2 text-[10px] leading-4 text-[#858273]">{selection?.excerpt}</p><textarea autoFocus value={annotationDraft} onChange={(event) => setAnnotationDraft(event.target.value)} rows={3} placeholder="写下你的补充、想法或疑问…" className="mt-2 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#d4c99d]" /><button disabled={busy || !annotationDraft.trim()} onClick={() => void saveAnnotation()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#82764f] py-2.5 text-xs font-medium text-white hover:bg-[#726744] disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}保存批注并划线</button></div>}
+        {annotationDraft !== null && <div className="mt-4 rounded-xl border border-[#e8dfc8] bg-white p-3.5 shadow-sm"><div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#887b58]">添加批注</p><button onClick={cancelAnnotation} aria-label="关闭"><X size={14} className="text-[#9da095]" /></button></div><p className="mt-2 line-clamp-3 border-l-2 border-[#d8c98d] pl-2 text-[10px] leading-4 text-[#858273]">{selection?.excerpt}</p><textarea autoFocus value={annotationDraft} onChange={(event) => setAnnotationDraft(event.target.value)} rows={3} placeholder="写下你的补充、想法或疑问…（可留空）" className="mt-2 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#d4c99d]" /><button disabled={busy} onClick={() => void saveAnnotation()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#82764f] py-2.5 text-xs font-medium text-white hover:bg-[#726744] disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}保存批注</button></div>}
         <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
           {annotations.map((item) => <div key={`a-${item.id}`} className="group rounded-xl border border-[#ece7d7] bg-white p-3"><div className="flex items-start justify-between gap-2"><button disabled={!item.anchorValid} onClick={() => jumpToRange(item.startOffset, item.endOffset, item.excerpt)} className="min-w-0 text-left disabled:cursor-default"><p className="line-clamp-2 border-l-2 border-[#d8c98d] pl-2 text-[11px] leading-[1.6] text-[#676457]">{item.excerpt}</p><p className="mt-2 line-clamp-3 text-[11px] leading-5 text-[#858273]">{item.comment}</p></button><button onClick={() => void removeAnnotation(item.id)} aria-label="删除批注" className="shrink-0 text-[#c0c2b9] opacity-0 hover:text-[#b45f51] group-hover:opacity-100"><Trash2 size={13} /></button></div></div>)}
           {cards.map((card) => <div key={`c-${card.id}`} className="group rounded-xl border border-[#e9eae4] bg-white p-3"><div className="flex items-start justify-between gap-2"><button disabled={!card.anchorValid} onClick={() => jumpToRange(card.startOffset, card.endOffset, card.excerpt)} className="flex min-w-0 items-start gap-2 text-left disabled:cursor-default"><span className="mt-0.5 size-1.5 shrink-0 rounded-full bg-[#b8c6ac]" /><span className="line-clamp-3 text-[11px] leading-[1.65] text-[#676c60]">{card.excerpt}</span></button><button onClick={() => void removeCard(card.id)} aria-label="删除复习卡" className="shrink-0 text-[#c0c2b9] opacity-0 hover:text-[#b45f51] group-hover:opacity-100"><Trash2 size={13} /></button></div><p className="mt-2 line-clamp-2 border-t border-[#f0f0eb] pt-2 text-[10px] text-[#8b8f83]">{card.question}</p></div>)}

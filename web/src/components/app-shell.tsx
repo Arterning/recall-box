@@ -53,7 +53,7 @@ export function AppShell() {
             <div className="mt-auto hidden rounded-xl border border-[#e5e6df] bg-[#fbfbf8] p-3.5 lg:block"><p className="text-[11px] font-medium text-[#6a6f63]">本地知识空间</p><p className="mt-1.5 text-[10px] leading-4 text-[#999c91]">笔记和复习记录保存在这台设备上。</p></div>
           </aside>
 
-          <section className="min-w-0"><Outlet /></section>
+          <section className="min-h-0 min-w-0"><Outlet /></section>
         </div>
         <footer className="mt-4 flex shrink-0 items-center justify-between border-t border-[#e4e5de] pt-3 text-[10px] text-[#aaaca2]"><span>Recall Box · 本地知识复习</span><span className="hidden sm:block">内容保存在此设备的 SQLite 数据库</span></footer>
       </div>

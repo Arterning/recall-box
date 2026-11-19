@@ -293,8 +293,8 @@ func (s *Server) createAnnotation(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input) {
 		return
 	}
-	if strings.TrimSpace(input.Excerpt) == "" || strings.TrimSpace(input.Comment) == "" || input.StartOffset < 0 || input.EndOffset <= input.StartOffset {
-		writeError(w, 400, errors.New("selected text, comment, and valid offsets are required"))
+	if strings.TrimSpace(input.Excerpt) == "" || input.StartOffset < 0 || input.EndOffset <= input.StartOffset {
+		writeError(w, 400, errors.New("selected text and valid offsets are required"))
 		return
 	}
 	if input.SourceText == "" {
