@@ -22,20 +22,22 @@ type Note struct {
 // Card represents a highlighted passage in a note. Offsets use UTF-16 code
 // units, matching textarea.selectionStart/selectionEnd in browser editors.
 type Card struct {
-	ID          uint           `json:"id" gorm:"primaryKey"`
-	NoteID      uint           `json:"noteId" gorm:"not null;index"`
-	Note        Note           `json:"-"`
-	Excerpt     string         `json:"excerpt" gorm:"type:text;not null"`
-	StartOffset int            `json:"startOffset" gorm:"not null;default:0"`
-	EndOffset   int            `json:"endOffset" gorm:"not null;default:0"`
-	AnchorValid bool           `json:"anchorValid" gorm:"not null;default:true"`
-	Prompt      string         `json:"prompt" gorm:"type:text;not null;default:''"`
-	Answer      string         `json:"answer" gorm:"type:text;not null;default:''"`
-	DueAt       *time.Time     `json:"dueAt" gorm:"index"`
-	FSRSState   string         `json:"fsrsState,omitempty" gorm:"type:text"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+	ID          uint   `json:"id" gorm:"primaryKey"`
+	NoteID      uint   `json:"noteId" gorm:"not null;index"`
+	Note        Note   `json:"-"`
+	Excerpt     string `json:"excerpt" gorm:"type:text;not null"`
+	StartOffset int    `json:"startOffset" gorm:"not null;default:0"`
+	EndOffset   int    `json:"endOffset" gorm:"not null;default:0"`
+	AnchorValid bool   `json:"anchorValid" gorm:"not null;default:true"`
+	Question    string `json:"question" gorm:"type:text;not null;default:''"`
+	// Prompt remains for cards created before the question field was introduced.
+	Prompt    string         `json:"prompt" gorm:"type:text;not null;default:''"`
+	Answer    string         `json:"answer" gorm:"type:text;not null;default:''"`
+	DueAt     *time.Time     `json:"dueAt" gorm:"index"`
+	FSRSState string         `json:"fsrsState,omitempty" gorm:"type:text"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type ReviewLog struct {

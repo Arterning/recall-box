@@ -157,6 +157,9 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
+	for i := range cards {
+		cards[i] = normalizeCard(cards[i])
+	}
 	writeJSON(w, 200, cards)
 }
 
@@ -165,6 +168,7 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		Excerpt     string `json:"excerpt"`
 		StartOffset int    `json:"startOffset"`
 		EndOffset   int    `json:"endOffset"`
+		Question    string `json:"question"`
 		Prompt      string `json:"prompt"`
 		Answer      string `json:"answer"`
 	}
@@ -188,7 +192,19 @@ func (s *Server) createCard(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, errors.New("selection text and offsets do not match"))
 		return
 	}
-	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Prompt: input.Prompt, Answer: input.Answer}
+	question := strings.TrimSpace(input.Question)
+	if question == "" {
+		question = strings.TrimSpace(input.Prompt)
+	}
+	if question == "" {
+		writeError(w, 400, errors.New("question is required"))
+		return
+	}
+	answer := strings.TrimSpace(input.Answer)
+	if answer == "" {
+		answer = input.Excerpt
+	}
+	card := model.Card{NoteID: note.ID, Excerpt: input.Excerpt, StartOffset: input.StartOffset, EndOffset: input.EndOffset, AnchorValid: true, Question: question, Prompt: input.Prompt, Answer: answer}
 	now := time.Now()
 	state, err := json.Marshal(fsrs.NewCard(now))
 	if err != nil {
@@ -213,11 +229,13 @@ func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 	}
 	type dueCard struct {
 		model.Card
-		NoteTitle string `json:"noteTitle"`
+		NoteTitle  string `json:"noteTitle"`
+		NoteFormat string `json:"noteFormat"`
 	}
 	result := make([]dueCard, 0, len(cards))
 	for _, card := range cards {
-		result = append(result, dueCard{Card: card, NoteTitle: card.Note.Title})
+		card = normalizeCard(card)
+		result = append(result, dueCard{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
 	writeJSON(w, 200, result)
 }
@@ -281,6 +299,7 @@ func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 	}
 	card.FSRSState = string(stateJSON)
 	card.DueAt = &dueAfter
+	card = normalizeCard(card)
 	writeJSON(w, 200, map[string]any{"card": card, "review": logEntry, "dueAt": dueAfter})
 }
 
@@ -389,4 +408,11 @@ func sliceUTF16(content string, start, end int) string {
 		return ""
 	}
 	return string(utf16.Decode(units[start:end]))
+}
+
+func normalizeCard(card model.Card) model.Card {
+	if card.Question == "" {
+		card.Question = card.Prompt
+	}
+	return card
 }
