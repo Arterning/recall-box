@@ -4,6 +4,7 @@ import { NotesPage } from "@/pages/notes-page"
 import { CardsPage } from "@/pages/cards-page"
 import { PlaceholderPage } from "@/pages/placeholder-page"
 import { ReviewPage } from "@/pages/review-page"
+import { ReviewHistoryPage } from "@/pages/review-history-page"
 
 export function App() {
   return (
@@ -13,6 +14,7 @@ export function App() {
           <Route index element={<Navigate to="/notes" replace />} />
           <Route path="notes" element={<NotesPage />} />
           <Route path="review" element={<ReviewPage />} />
+          <Route path="review/history" element={<ReviewHistoryPage />} />
           <Route path="cards" element={<CardsPage />} />
           <Route path="statistics" element={<PlaceholderPage page="statistics" />} />
           <Route path="settings" element={<PlaceholderPage page="settings" />} />

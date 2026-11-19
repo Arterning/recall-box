@@ -46,6 +46,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
 	s.mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
 	s.mux.HandleFunc("POST /api/cards/{id}/review", s.reviewCard)
+	s.mux.HandleFunc("GET /api/reviews/history", s.reviewHistory)
 	s.mux.HandleFunc("GET /api/reviews/stats", s.reviewStats)
 }
 
@@ -356,7 +357,8 @@ func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Rating int `json:"rating"`
+		Rating   int    `json:"rating"`
+		Response string `json:"response"`
 	}
 	if !decode(w, r, &input) {
 		return
@@ -400,7 +402,7 @@ func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 	}
 	dueBefore := card.DueAt
 	dueAfter := scheduled.Card.Due
-	logEntry := model.ReviewLog{CardID: card.ID, Rating: input.Rating, ReviewedAt: now, DueBefore: dueBefore, DueAfter: &dueAfter, FSRSLog: string(fsrsLogJSON)}
+	logEntry := model.ReviewLog{CardID: card.ID, Rating: input.Rating, Response: input.Response, ReviewedAt: now, DueBefore: dueBefore, DueAfter: &dueAfter, FSRSLog: string(fsrsLogJSON)}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&card).Updates(map[string]any{"fsrs_state": string(stateJSON), "due_at": dueAfter}).Error; err != nil {
 			return err
@@ -415,6 +417,35 @@ func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 	card.DueAt = &dueAfter
 	card = normalizeCard(card)
 	writeJSON(w, 200, map[string]any{"card": card, "review": logEntry, "dueAt": dueAfter})
+}
+
+func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
+	type historyItem struct {
+		ID         uint       `json:"id"`
+		CardID     uint       `json:"cardId"`
+		Rating     int        `json:"rating"`
+		Response   string     `json:"response"`
+		ReviewedAt time.Time  `json:"reviewedAt"`
+		Question   string     `json:"question"`
+		Excerpt    string     `json:"excerpt"`
+		NoteTitle  string     `json:"noteTitle"`
+	}
+	var history []historyItem
+	err := s.db.Table("review_logs").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, notes.title AS note_title").
+		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
+		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
+		Order("review_logs.reviewed_at desc").
+		Limit(500).
+		Scan(&history).Error
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if history == nil {
+		history = []historyItem{}
+	}
+	writeJSON(w, 200, history)
 }
 
 func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {

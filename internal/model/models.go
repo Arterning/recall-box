@@ -59,6 +59,7 @@ type ReviewLog struct {
 	ID         uint       `json:"id" gorm:"primaryKey"`
 	CardID     uint       `json:"cardId" gorm:"not null;index"`
 	Rating     int        `json:"rating" gorm:"not null"` // FSRS: 1 Again, 2 Hard, 3 Good, 4 Easy
+	Response   string     `json:"response" gorm:"type:text;not null;default:''"`
 	ReviewedAt time.Time  `json:"reviewedAt" gorm:"index"`
 	DueBefore  *time.Time `json:"dueBefore,omitempty"`
 	DueAfter   *time.Time `json:"dueAfter,omitempty"`
