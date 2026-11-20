@@ -46,6 +46,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/annotations/{id}", s.deleteAnnotation)
 	s.mux.HandleFunc("GET /api/cards", s.listAllCards)
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
+	s.mux.HandleFunc("PUT /api/cards/{id}", s.updateCard)
 	s.mux.HandleFunc("DELETE /api/cards/{id}", s.deleteCard)
 	s.mux.HandleFunc("POST /api/cards/{id}/review", s.reviewCard)
 	s.mux.HandleFunc("GET /api/reviews/history", s.reviewHistory)
@@ -195,7 +196,7 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	}
 	for i := range cards {
 		cards[i] = normalizeCard(cards[i])
-		cards[i].Excerpt = clozeExcerpt(note.Content, cards[i].StartOffset, cards[i].EndOffset)
+		cards[i].Excerpt = resolveCardContext(cards[i], note.Content)
 	}
 	writeJSON(w, 200, cards)
 }
@@ -302,6 +303,69 @@ func (s *Server) createStandaloneCard(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, cardItem{Card: card, NoteTitle: "独立卡片", NoteFormat: "markdown"})
 }
 
+func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Question *string `json:"question"`
+		Answer   *string `json:"answer"`
+		Context  *string `json:"context"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	var card model.Card
+	if err := s.db.First(&card, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	updates := map[string]any{}
+	if input.Question != nil {
+		question := strings.TrimSpace(*input.Question)
+		if question == "" {
+			writeError(w, 400, errors.New("question is required"))
+			return
+		}
+		updates["question"] = question
+	}
+	if input.Answer != nil {
+		answer := strings.TrimSpace(*input.Answer)
+		if answer == "" {
+			writeError(w, 400, errors.New("answer is required"))
+			return
+		}
+		updates["answer"] = answer
+	}
+	if input.Context != nil {
+		contextText := strings.TrimSpace(*input.Context)
+		if card.NoteID == nil {
+			updates["excerpt"] = contextText
+		} else {
+			updates["context_override"] = contextText
+		}
+	}
+	if len(updates) > 0 {
+		if err := s.db.Model(&card).Updates(updates).Error; err != nil {
+			writeError(w, 500, err)
+			return
+		}
+	}
+	if err := s.db.Preload("Note").First(&card, card.ID).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	card = normalizeCard(card)
+	card.Excerpt = resolveCardContext(card, card.Note.Content)
+	noteTitle, noteFormat := card.Note.Title, card.Note.Format
+	if card.NoteID == nil {
+		noteTitle, noteFormat = "独立卡片", "markdown"
+	}
+	type cardItem struct {
+		model.Card
+		NoteTitle  string `json:"noteTitle"`
+		NoteFormat string `json:"noteFormat"`
+	}
+	writeJSON(w, 200, cardItem{Card: card, NoteTitle: noteTitle, NoteFormat: noteFormat})
+}
+
 func (s *Server) listAnnotations(w http.ResponseWriter, r *http.Request) {
 	var annotations []model.Annotation
 	if err := s.db.Where("note_id = ?", r.PathValue("id")).Order("created_at desc").Find(&annotations).Error; err != nil {
@@ -316,7 +380,7 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 	query := s.db.Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 		like := "%" + strings.ReplaceAll(strings.ReplaceAll(search, "%", "\\%"), "_", "\\_") + "%"
-		query = query.Where("cards.question LIKE ? OR cards.answer LIKE ? OR cards.excerpt LIKE ? OR notes.title LIKE ?", like, like, like, like)
+		query = query.Where("cards.question LIKE ? OR cards.answer LIKE ? OR cards.excerpt LIKE ? OR cards.context_override LIKE ? OR notes.title LIKE ?", like, like, like, like, like)
 	}
 	if err := query.Order("cards.due_at asc").Find(&cards).Error; err != nil {
 		writeError(w, 500, err)
@@ -330,9 +394,7 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 	result := make([]cardItem, 0, len(cards))
 	for _, card := range cards {
 		card = normalizeCard(card)
-		if card.NoteID != nil {
-			card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
-		}
+		card.Excerpt = resolveCardContext(card, card.Note.Content)
 		result = append(result, cardItem{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
 	writeJSON(w, 200, result)
@@ -405,9 +467,7 @@ func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 	result := make([]dueCard, 0, len(cards))
 	for _, card := range cards {
 		card = normalizeCard(card)
-		if card.NoteID != nil {
-			card.Excerpt = clozeExcerpt(card.Note.Content, card.StartOffset, card.EndOffset)
-		}
+		card.Excerpt = resolveCardContext(card, card.Note.Content)
 		noteTitle, noteFormat := card.Note.Title, card.Note.Format
 		if card.NoteID == nil {
 			noteTitle, noteFormat = "独立卡片", "markdown"
@@ -535,22 +595,23 @@ func (s *Server) updateSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 	type historyItem struct {
-		ID          uint      `json:"id"`
-		CardID      uint      `json:"cardId"`
-		Rating      int       `json:"rating"`
-		Response    string    `json:"response"`
-		ReviewedAt  time.Time `json:"reviewedAt"`
-		Question    string    `json:"question"`
-		Excerpt     string    `json:"excerpt"`
-		NoteTitle   string    `json:"noteTitle"`
-		NoteID      *uint     `json:"-"`
-		NoteText    string    `json:"-"`
-		StartOffset int       `json:"-"`
-		EndOffset   int       `json:"-"`
+		ID              uint      `json:"id"`
+		CardID          uint      `json:"cardId"`
+		Rating          int       `json:"rating"`
+		Response        string    `json:"response"`
+		ReviewedAt      time.Time `json:"reviewedAt"`
+		Question        string    `json:"question"`
+		Excerpt         string    `json:"excerpt"`
+		NoteTitle       string    `json:"noteTitle"`
+		NoteID          *uint     `json:"-"`
+		ContextOverride string    `json:"-"`
+		NoteText        string    `json:"-"`
+		StartOffset     int       `json:"-"`
+		EndOffset       int       `json:"-"`
 	}
 	var history []historyItem
 	err := s.db.Table("review_logs").
-		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.context_override, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
 		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
 		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
 		Order("review_logs.reviewed_at desc").
@@ -564,7 +625,9 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		history = []historyItem{}
 	}
 	for i := range history {
-		if history[i].NoteID != nil {
+		if history[i].ContextOverride != "" {
+			history[i].Excerpt = history[i].ContextOverride
+		} else if history[i].NoteID != nil {
 			history[i].Excerpt = clozeExcerpt(history[i].NoteText, history[i].StartOffset, history[i].EndOffset)
 		} else {
 			history[i].NoteTitle = "独立卡片"
@@ -584,18 +647,19 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		Count  int `json:"count"`
 	}
 	type recentItem struct {
-		ID          uint      `json:"id"`
-		CardID      uint      `json:"cardId"`
-		Rating      int       `json:"rating"`
-		Response    string    `json:"response"`
-		ReviewedAt  time.Time `json:"reviewedAt"`
-		Question    string    `json:"question"`
-		Excerpt     string    `json:"excerpt"`
-		NoteTitle   string    `json:"noteTitle"`
-		NoteID      *uint     `json:"-"`
-		NoteText    string    `json:"-"`
-		StartOffset int       `json:"-"`
-		EndOffset   int       `json:"-"`
+		ID              uint      `json:"id"`
+		CardID          uint      `json:"cardId"`
+		Rating          int       `json:"rating"`
+		Response        string    `json:"response"`
+		ReviewedAt      time.Time `json:"reviewedAt"`
+		Question        string    `json:"question"`
+		Excerpt         string    `json:"excerpt"`
+		NoteTitle       string    `json:"noteTitle"`
+		NoteID          *uint     `json:"-"`
+		ContextOverride string    `json:"-"`
+		NoteText        string    `json:"-"`
+		StartOffset     int       `json:"-"`
+		EndOffset       int       `json:"-"`
 	}
 	now := time.Now()
 	location := now.Location()
@@ -664,7 +728,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	var recent []recentItem
 	if err := s.db.Table("review_logs").
-		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
+		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.context_override, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
 		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
 		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
 		Order("review_logs.reviewed_at desc").Limit(8).Scan(&recent).Error; err != nil {
@@ -672,7 +736,9 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range recent {
-		if recent[i].NoteID != nil {
+		if recent[i].ContextOverride != "" {
+			recent[i].Excerpt = recent[i].ContextOverride
+		} else if recent[i].NoteID != nil {
 			recent[i].Excerpt = clozeExcerpt(recent[i].NoteText, recent[i].StartOffset, recent[i].EndOffset)
 		} else {
 			recent[i].NoteTitle = "独立卡片"
@@ -814,6 +880,16 @@ func clozeExcerpt(content string, start, end int) string {
 		return "［选中内容］"
 	}
 	return context
+}
+
+func resolveCardContext(card model.Card, noteContent string) string {
+	if card.NoteID == nil {
+		return card.Excerpt
+	}
+	if card.ContextOverride != "" {
+		return card.ContextOverride
+	}
+	return clozeExcerpt(noteContent, card.StartOffset, card.EndOffset)
 }
 
 func normalizeCard(card model.Card) model.Card {

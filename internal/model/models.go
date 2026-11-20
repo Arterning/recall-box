@@ -22,15 +22,16 @@ type Note struct {
 // Card represents a highlighted passage in a note. Offsets use UTF-16 code
 // units, matching textarea.selectionStart/selectionEnd in browser editors.
 type Card struct {
-	ID          uint   `json:"id" gorm:"primaryKey"`
-	NoteID      *uint  `json:"noteId,omitempty" gorm:"index"`
-	Note        Note   `json:"-"`
-	Excerpt     string `json:"excerpt" gorm:"type:text;not null"`
-	SourceText  string `json:"-" gorm:"type:text;not null;default:''"`
-	StartOffset int    `json:"startOffset" gorm:"not null;default:0"`
-	EndOffset   int    `json:"endOffset" gorm:"not null;default:0"`
-	AnchorValid bool   `json:"anchorValid" gorm:"not null;default:true"`
-	Question    string `json:"question" gorm:"type:text;not null;default:''"`
+	ID              uint   `json:"id" gorm:"primaryKey"`
+	NoteID          *uint  `json:"noteId,omitempty" gorm:"index"`
+	Note            Note   `json:"-"`
+	Excerpt         string `json:"excerpt" gorm:"type:text;not null"`
+	ContextOverride string `json:"-" gorm:"type:text;not null;default:''"`
+	SourceText      string `json:"-" gorm:"type:text;not null;default:''"`
+	StartOffset     int    `json:"startOffset" gorm:"not null;default:0"`
+	EndOffset       int    `json:"endOffset" gorm:"not null;default:0"`
+	AnchorValid     bool   `json:"anchorValid" gorm:"not null;default:true"`
+	Question        string `json:"question" gorm:"type:text;not null;default:''"`
 	// Prompt remains for cards created before the question field was introduced.
 	Prompt    string         `json:"prompt" gorm:"type:text;not null;default:''"`
 	Answer    string         `json:"answer" gorm:"type:text;not null;default:''"`
