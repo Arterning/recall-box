@@ -18,7 +18,7 @@ export function ReviewPage() {
   const [stats, setStats] = useState<Stats>({ notes: 0, cards: 0, due: 0, reviewedToday: 0 })
   const [response, setResponse] = useState("")
   const [showReference, setShowReference] = useState(false)
-  const [forgotRecorded, setForgotRecorded] = useState(false)
+  const [quickRating, setQuickRating] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -43,7 +43,7 @@ export function ReviewPage() {
     setIndex(next)
     setResponse("")
     setShowReference(false)
-    setForgotRecorded(false)
+    setQuickRating(null)
   }
 
   const rate = async (rating: number) => {
@@ -63,18 +63,18 @@ export function ReviewPage() {
     }
   }
 
-  const forgot = async () => {
-    if (!current || busy || forgotRecorded) return
+  const quickRate = async (rating: 2 | 3) => {
+    if (!current || busy || quickRating !== null) return
     setBusy(true)
     setError("")
     try {
       const result = await api<{ dueAt: string }>(`/api/cards/${current.id}/review`, {
         method: "POST",
-        body: JSON.stringify({ rating: 2, response: "" }),
+        body: JSON.stringify({ rating, response: "" }),
       })
       setDueCards((cards) => cards.map((card) => card.id === current.id ? { ...card, dueAt: result.dueAt } : card))
       setShowReference(true)
-      setForgotRecorded(true)
+      setQuickRating(rating)
       const summary = await api<Stats>("/api/reviews/stats")
       setStats(summary)
     } catch (cause) {
@@ -91,7 +91,7 @@ export function ReviewPage() {
       setIndex((currentIndex) => Math.min(currentIndex, Math.max(0, remaining.length - 1)))
       setResponse("")
       setShowReference(false)
-      setForgotRecorded(false)
+      setQuickRating(null)
     } catch (cause) {
       setError(toErrorMessage(cause, "加载复习队列失败"))
     } finally {
@@ -108,7 +108,7 @@ export function ReviewPage() {
         {loading ? <div className="flex min-h-80 items-center justify-center gap-2 text-sm text-[#8e9287]"><LoaderCircle size={17} className="animate-spin" />正在加载复习队列…</div> : current ? <div className="px-6 py-7 sm:px-10 sm:py-9">
           <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.13em] text-[#86927b]"><Sparkles size={14} /> Active recall <span className="ml-auto max-w-[55%] truncate tracking-normal text-[#aaaca2]">{current.noteTitle || "独立卡片"}</span></div>
           <div className="mt-8"><p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-[#a7aa9f]">请回答</p><h2 className="mt-3 whitespace-pre-wrap text-xl font-medium leading-[1.65] tracking-[-0.02em] text-[#35392f]">{current.question || current.answer || current.excerpt}</h2><div className="mt-5 rounded-xl border border-[#eee9da] bg-[#fcfaf3] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#9c9273]">上下文</p><CardText value={current.excerpt} markdown={current.noteFormat === "markdown"} /></div><label className="mt-5 block text-[10px] font-semibold uppercase tracking-[0.13em] text-[#a7aa9f]">你的回答<textarea value={response} onChange={(event) => setResponse(event.target.value)} placeholder="根据问题和上下文回忆答案…" rows={4} className="mt-2 w-full resize-y rounded-xl border border-[#e7e9e1] bg-[#fcfcfa] px-4 py-3 text-sm font-normal leading-6 normal-case tracking-normal text-[#45493f] outline-none placeholder:text-[#b4b6ad] focus:border-[#bdc9b3]" /></label></div>
-          {!showReference ? <div className="mt-4 space-y-2"><button disabled={!response.trim()} onClick={() => setShowReference(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#30352a] py-3.5 text-sm font-medium text-white hover:bg-[#41473a] disabled:cursor-not-allowed disabled:opacity-45">查看参考答案<ChevronRight size={16} /></button><button disabled={busy} onClick={() => void forgot()} className="w-full rounded-xl border border-[#e5e6df] py-3 text-sm font-medium text-[#777b70] hover:bg-[#f8f9f5] disabled:opacity-50">{busy ? "正在保存…" : "我不记得了，直接查看答案"}</button></div> : <div className="mt-5 space-y-3"><div className="rounded-xl border border-[#e7eadf] bg-[#f8f9f5] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#8c967f]">参考答案</p><CardText value={current.answer || current.excerpt} markdown={current.noteFormat === "markdown"} /></div>{forgotRecorded ? <div className="space-y-3"><p className="rounded-xl bg-[#f3eee0] px-4 py-3 text-center text-sm text-[#8d7950]">已按“困难”记录，回答留空，下次复习时间已安排。</p><button onClick={() => void continueAfterForgot()} className="w-full rounded-xl bg-[#30352a] py-3 text-sm font-medium text-white hover:bg-[#41473a]">看完了，继续下一张</button></div> : <div><p className="mb-2.5 text-center text-[10px] text-[#a1a398]">对照后，你觉得自己记得怎么样？</p><div className="grid grid-cols-4 gap-2">{ratings.map((item) => <button key={item.rating} disabled={busy} onClick={() => void rate(item.rating)} className={`rounded-xl py-3 transition disabled:opacity-50 ${item.className}`}>{busy ? <LoaderCircle className="mx-auto animate-spin" size={15} /> : <><span className="block text-xs font-semibold">{item.label}</span><span className="mt-0.5 block text-[9px] opacity-70">{item.name}</span></>}</button>)}</div></div>}</div>}
+          {!showReference ? <div className="mt-4 space-y-2"><button disabled={!response.trim()} onClick={() => setShowReference(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#30352a] py-3.5 text-sm font-medium text-white hover:bg-[#41473a] disabled:cursor-not-allowed disabled:opacity-45">查看参考答案<ChevronRight size={16} /></button><button disabled={busy} onClick={() => void quickRate(2)} className="w-full rounded-xl border border-[#e5e6df] py-3 text-sm font-medium text-[#777b70] hover:bg-[#f8f9f5] disabled:opacity-50">{busy ? "正在保存…" : "我不记得了，直接查看答案"}</button><button disabled={busy} onClick={() => void quickRate(3)} className="w-full rounded-xl border border-[#dfe6d8] bg-[#f8f9f5] py-3 text-sm font-medium text-[#647555] hover:bg-[#eef2e9] disabled:opacity-50">{busy ? "正在保存…" : "我记得了，直接查看答案"}</button></div> : <div className="mt-5 space-y-3"><div className="rounded-xl border border-[#e7eadf] bg-[#f8f9f5] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#8c967f]">参考答案</p><CardText value={current.answer || current.excerpt} markdown={current.noteFormat === "markdown"} /></div>{quickRating !== null ? <div className="space-y-3"><p className={`rounded-xl px-4 py-3 text-center text-sm ${quickRating === 3 ? "bg-[#e9eee3] text-[#647555]" : "bg-[#f3eee0] text-[#8d7950]"}`}>已按“{quickRating === 3 ? "记得" : "困难"}”记录，回答留空，下次复习时间已安排。</p><button onClick={() => void continueAfterForgot()} className="w-full rounded-xl bg-[#30352a] py-3 text-sm font-medium text-white hover:bg-[#41473a]">看完了，继续下一张</button></div> : <div><p className="mb-2.5 text-center text-[10px] text-[#a1a398]">对照后，你觉得自己记得怎么样？</p><div className="grid grid-cols-4 gap-2">{ratings.map((item) => <button key={item.rating} disabled={busy} onClick={() => void rate(item.rating)} className={`rounded-xl py-3 transition disabled:opacity-50 ${item.className}`}>{busy ? <LoaderCircle className="mx-auto animate-spin" size={15} /> : <><span className="block text-xs font-semibold">{item.label}</span><span className="mt-0.5 block text-[9px] opacity-70">{item.name}</span></>}</button>)}</div></div>}</div>}
           <div className="mt-7 flex items-center justify-between border-t border-[#f0f0eb] pt-4 text-[10px] text-[#a4a69b]"><span className="flex items-center gap-1.5"><Clock3 size={12} /> FSRS 按评分安排下一次复习</span><span>回答保存在本机，可在提交历史查看</span></div>
         </div> : <div className="px-7 py-16 text-center sm:px-10"><div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#e9eee3] text-[#718264]"><Check size={24} /></div><h2 className="mt-5 text-xl font-semibold tracking-tight">今天的复习完成了</h2><p className="mt-2 text-sm text-[#8b8f83]">新卡片和之后到期的卡片会出现在这里。</p><Link to="/notes" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-[#30352a] px-4 py-2.5 text-sm text-white hover:bg-[#41473a]">回到笔记</Link></div>}
       </section>
