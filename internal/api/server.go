@@ -388,7 +388,7 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 		pageSize = 100
 	}
 	var cards []model.Card
-	query := s.db.Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
+	query := s.db.Model(&model.Card{}).Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 		like := "%" + strings.ReplaceAll(strings.ReplaceAll(search, "%", "\\%"), "_", "\\_") + "%"
 		query = query.Where("cards.question LIKE ? OR cards.answer LIKE ? OR cards.excerpt LIKE ? OR cards.context_override LIKE ? OR notes.title LIKE ?", like, like, like, like, like)
