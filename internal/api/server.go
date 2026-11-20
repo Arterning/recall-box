@@ -376,13 +376,33 @@ func (s *Server) listAnnotations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if pageSize < 1 {
+		pageSize = 30
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
 	var cards []model.Card
 	query := s.db.Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 		like := "%" + strings.ReplaceAll(strings.ReplaceAll(search, "%", "\\%"), "_", "\\_") + "%"
 		query = query.Where("cards.question LIKE ? OR cards.answer LIKE ? OR cards.excerpt LIKE ? OR cards.context_override LIKE ? OR notes.title LIKE ?", like, like, like, like, like)
 	}
-	if err := query.Order("cards.due_at asc").Find(&cards).Error; err != nil {
+	var total, dueCount int64
+	if err := query.Count(&total).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := query.Session(&gorm.Session{}).Where("cards.due_at IS NULL OR cards.due_at <= ?", time.Now()).Count(&dueCount).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := query.Order("cards.due_at asc").Order("cards.id asc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&cards).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
@@ -397,7 +417,7 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 		card.Excerpt = resolveCardContext(card, card.Note.Content)
 		result = append(result, cardItem{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
-	writeJSON(w, 200, result)
+	writeJSON(w, 200, map[string]any{"items": result, "total": total, "dueCount": dueCount, "page": page, "pageSize": pageSize})
 }
 
 func (s *Server) createAnnotation(w http.ResponseWriter, r *http.Request) {

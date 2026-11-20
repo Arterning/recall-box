@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react"
 import type { FormEvent } from "react"
-import { BookOpenText, Check, CircleHelp, Clock3, Eye, Layers3, LoaderCircle, Pencil, Plus, Search, Trash2, X, ChevronRight } from "lucide-react"
+import { BookOpenText, Check, CircleHelp, Clock3, Layers3, LoaderCircle, Pencil, Plus, Search, Trash2, X, ChevronLeft, ChevronRight } from "lucide-react"
 import { Link } from "react-router"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { api, toErrorMessage, type Card } from "@/lib/api"
+import { api, toErrorMessage, type Card, type CardListResult } from "@/lib/api"
 
 function dueLabel(value: string | null) {
   if (!value) return "尚未安排"
@@ -15,6 +15,10 @@ function dueLabel(value: string | null) {
 
 export function CardsPage() {
   const [cards, setCards] = useState<Card[]>([])
+  const [totalCards, setTotalCards] = useState(0)
+  const [dueCount, setDueCount] = useState(0)
+  const [page, setPage] = useState(1)
+  const pageSize = 30
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -31,14 +35,18 @@ export function CardsPage() {
   const [reviewed, setReviewed] = useState(false)
   const [reviewRating, setReviewRating] = useState<number | null>(null)
 
-  const load = useCallback(async (query: string) => {
+  const load = useCallback(async (query: string, currentPage: number) => {
     setLoading(true)
     setError("")
     try {
       const params = new URLSearchParams()
       if (query.trim()) params.set("q", query.trim())
-      const result = await api<Card[]>(`/api/cards${params.size ? `?${params}` : ""}`)
-      setCards(result)
+      params.set("page", String(currentPage))
+      params.set("pageSize", String(pageSize))
+      const result = await api<CardListResult>(`/api/cards?${params}`)
+      setCards(result.items)
+      setTotalCards(result.total)
+      setDueCount(result.dueCount)
     } catch (cause) {
       setError(toErrorMessage(cause, "加载卡片失败"))
     } finally {
@@ -47,9 +55,11 @@ export function CardsPage() {
   }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(search), 180)
+    const timer = window.setTimeout(() => void load(search, page), 180)
     return () => window.clearTimeout(timer)
-  }, [load, search])
+  }, [load, search, page])
+
+  useEffect(() => { setPage(1) }, [search])
 
   const remove = async (card: Card) => {
     if (!window.confirm("确定删除这张复习卡片吗？")) return
@@ -57,6 +67,8 @@ export function CardsPage() {
     try {
       await api(`/api/cards/${card.id}`, { method: "DELETE" })
       setCards((current) => current.filter((item) => item.id !== card.id))
+      setTotalCards((total) => Math.max(0, total - 1))
+      if (!card.dueAt || new Date(card.dueAt).getTime() <= Date.now()) setDueCount((count) => Math.max(0, count - 1))
     } catch (cause) {
       setError(toErrorMessage(cause, "删除卡片失败"))
     } finally {
@@ -75,6 +87,8 @@ export function CardsPage() {
       } else {
         const card = await api<Card>("/api/cards", { method: "POST", body: JSON.stringify(draft) })
         setCards((current) => [card, ...current])
+        setTotalCards((total) => total + 1)
+        if (!card.dueAt || new Date(card.dueAt).getTime() <= Date.now()) setDueCount((count) => count + 1)
       }
       setDraft({ question: "", answer: "", context: "" })
       setCreateOpen(false)
@@ -133,8 +147,6 @@ export function CardsPage() {
       setReviewing(false)
     }
   }
-  const dueCount = cards.filter((card) => !card.dueAt || new Date(card.dueAt).getTime() <= Date.now()).length
-
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -144,20 +156,22 @@ export function CardsPage() {
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <label className="flex min-w-64 flex-1 items-center gap-2 rounded-xl border border-[#e5e6df] bg-white px-3.5 py-2.5 text-[#898d82] focus-within:border-[#bdc9b3]"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题、答案、上下文或笔记" className="w-full bg-transparent text-sm text-[#45493f] outline-none placeholder:text-[#aaaca2]" /></label>
-        <div className="flex items-center gap-4 rounded-xl border border-[#e5e6df] bg-white px-4 py-2.5 text-xs text-[#7e8377]"><span className="flex items-center gap-1.5"><Layers3 size={14} />{cards.length} 张卡片</span><span className="flex items-center gap-1.5"><Clock3 size={14} />{dueCount} 张待复习</span></div>
+        <div className="flex items-center gap-4 rounded-xl border border-[#e5e6df] bg-white px-4 py-2.5 text-xs text-[#7e8377]"><span className="flex items-center gap-1.5"><Layers3 size={14} />{totalCards} 张卡片</span><span className="flex items-center gap-1.5"><Clock3 size={14} />{dueCount} 张待复习</span></div>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-[#efd5ce] bg-[#fff5f1] px-4 py-2.5 text-sm text-[#9b5748]">{error}</div>}
       {loading ? <div className="flex min-h-56 items-center justify-center gap-2 text-sm text-[#8e9287]"><LoaderCircle size={17} className="animate-spin" />正在加载卡片…</div> : cards.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {cards.map((card) => {
           const isDue = !card.dueAt || new Date(card.dueAt).getTime() <= Date.now()
-          return <article key={card.id} onClick={() => { setSelectedCard(card); setResponse(""); setShowAnswer(false); setReviewed(false); setReviewRating(null) }} className="group cursor-pointer rounded-2xl border border-[#e5e6df] bg-white p-4 shadow-[0_18px_50px_-45px_rgba(45,51,38,.5)] transition hover:-translate-y-0.5 hover:border-[#cbd4c1] hover:shadow-md">
-            <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-1.5 truncate text-[11px] text-[#8b907f]"><BookOpenText size={13} className="shrink-0" />{card.noteTitle || "独立卡片"}</div><div className="flex shrink-0 items-center gap-1"><button onClick={(event) => { event.stopPropagation(); setViewCard(card) }} aria-label="查看卡片内容" title="查看" className="grid size-7 place-items-center rounded-lg text-[#a3a69c] hover:bg-[#f1f2ed] hover:text-[#687b58]"><Eye size={13} /></button><button onClick={(event) => { event.stopPropagation(); openEdit(card) }} aria-label="编辑卡片" className="grid size-7 place-items-center rounded-lg text-[#a3a69c] hover:bg-[#f1f2ed] hover:text-[#687b58]"><Pencil size={13} /></button><button disabled={deleting === card.id} onClick={(event) => { event.stopPropagation(); void remove(card) }} aria-label="删除卡片" className="grid size-7 place-items-center rounded-lg text-[#a3a69c] hover:bg-[#fff2ef] hover:text-[#a75e4e] disabled:opacity-50">{deleting === card.id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}</button></div></div>
+          return <article key={card.id} onClick={() => setViewCard(card)} className="group cursor-pointer rounded-2xl border border-[#e5e6df] bg-white p-4 shadow-[0_18px_50px_-45px_rgba(45,51,38,.5)] transition hover:-translate-y-0.5 hover:border-[#cbd4c1] hover:shadow-md">
+            <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-1.5 truncate text-[11px] text-[#8b907f]"><BookOpenText size={13} className="shrink-0" />{card.noteTitle || "独立卡片"}</div><div className="flex shrink-0 items-center gap-1"><button onClick={(event) => { event.stopPropagation(); openEdit(card) }} aria-label="编辑卡片" className="grid size-7 place-items-center rounded-lg text-[#a3a69c] hover:bg-[#f1f2ed] hover:text-[#687b58]"><Pencil size={13} /></button><button disabled={deleting === card.id} onClick={(event) => { event.stopPropagation(); void remove(card) }} aria-label="删除卡片" className="grid size-7 place-items-center rounded-lg text-[#a3a69c] hover:bg-[#fff2ef] hover:text-[#a75e4e] disabled:opacity-50">{deleting === card.id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}</button></div></div>
             <p className="mt-3 line-clamp-3 min-h-[4.5rem] whitespace-pre-wrap text-sm font-medium leading-6 text-[#35392f]">{card.question || card.answer || card.excerpt}</p>
-            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f0f0eb] pt-2.5"><span className={`truncate text-[10px] ${isDue ? "text-[#a66550]" : "text-[#85897d]"}`}>{dueLabel(card.dueAt)}</span><span className="flex shrink-0 items-center gap-1 text-[10px] text-[#718264] opacity-0 transition group-hover:opacity-100">主动温习<ChevronRight size={12} /></span></div>
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#f0f0eb] pt-2.5"><span className={`truncate text-[10px] ${isDue ? "text-[#a66550]" : "text-[#85897d]"}`}>{dueLabel(card.dueAt)}</span><span className="flex shrink-0 items-center gap-1 text-[10px] text-[#718264] opacity-0 transition group-hover:opacity-100">查看内容<ChevronRight size={12} /></span></div>
           </article>
         })}
       </div> : <div className="rounded-2xl border border-dashed border-[#dfe2d8] bg-[#fbfbf8] px-6 py-16 text-center"><div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#e9eee3] text-[#718264]"><Layers3 size={23} /></div><h2 className="mt-4 text-lg font-semibold text-[#35392f]">{search ? "没有找到匹配的卡片" : "卡片库还是空的"}</h2><p className="mt-2 text-sm text-[#85897d]">你可以直接录入外部资料，也可以从笔记中选取重点。</p><div className="mt-5 flex justify-center gap-2"><button onClick={() => setCreateOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl bg-[#30352a] px-4 py-2.5 text-sm text-white hover:bg-[#41473a]"><Plus size={14} />直接新建卡片</button><Link to="/notes" className="inline-flex rounded-xl border border-[#e2e4dc] bg-white px-4 py-2.5 text-sm text-[#5e6357] hover:bg-[#f8f9f5]">前往笔记</Link></div></div>}
+
+      {!loading && totalCards > 0 && <div className="mt-5 flex items-center justify-between rounded-xl border border-[#e5e6df] bg-white px-4 py-3"><span className="text-xs text-[#85897d]">第 {page} / {Math.max(1, Math.ceil(totalCards / pageSize))} 页，每页 {pageSize} 张</span><div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="flex items-center gap-1 rounded-lg border border-[#e5e6df] px-3 py-2 text-xs text-[#666c5d] hover:bg-[#f8f9f5] disabled:opacity-40"><ChevronLeft size={14} />上一页</button><button disabled={page >= Math.ceil(totalCards / pageSize)} onClick={() => setPage((value) => value + 1)} className="flex items-center gap-1 rounded-lg border border-[#e5e6df] px-3 py-2 text-xs text-[#666c5d] hover:bg-[#f8f9f5] disabled:opacity-40">下一页<ChevronRight size={14} /></button></div></div>}
 
       {viewCard && <div className="fixed inset-0 z-40 flex justify-end bg-black/25" onMouseDown={(event) => { if (event.target === event.currentTarget) setViewCard(null) }}><aside className="flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-[#e5e6df] bg-white shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-[#eeefe9] px-5 py-4"><div className="min-w-0"><p className="truncate text-[11px] text-[#8b907f]">{viewCard.noteTitle || "独立卡片"}</p><h2 className="mt-1 text-lg font-semibold text-[#35392f]">查看卡片</h2></div><button onClick={() => setViewCard(null)} aria-label="关闭" className="grid size-8 shrink-0 place-items-center rounded-lg text-[#85897d] hover:bg-[#f1f2ed]"><X size={17} /></button></div><div className="flex-1 space-y-5 overflow-y-auto px-5 py-5"><section><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#8c967f]">复习问题</p><div className="markdown-preview mt-2 text-base leading-7 text-[#35392f]"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{viewCard.question || "（没有单独填写问题）"}</ReactMarkdown></div></section><section className="rounded-xl border border-[#e7eadf] bg-[#f8f9f5] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#8c967f]">参考答案</p><div className="markdown-preview mt-2 text-sm leading-6 text-[#45493f]"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{viewCard.answer || "（没有单独填写参考答案）"}</ReactMarkdown></div></section><section className="rounded-xl border border-[#eee9da] bg-[#fcfaf3] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#9c9273]">上下文</p><div className="markdown-preview mt-2 text-sm leading-6 text-[#635f50]"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{viewCard.excerpt || "（没有上下文）"}</ReactMarkdown></div></section></div><div className="border-t border-[#eeefe9] p-5"><button onClick={() => { setViewCard(null); setSelectedCard(viewCard); setResponse(""); setShowAnswer(false); setReviewed(false); setReviewRating(null) }} className="w-full rounded-xl bg-[#30352a] py-3 text-sm font-medium text-white hover:bg-[#41473a]">开始主动温习</button></div></aside></div>}
       {selectedCard && <div className="fixed inset-0 z-40 flex justify-end bg-black/25" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedCard(null) }}><aside className="flex h-full w-full max-w-xl flex-col overflow-hidden border-l border-[#e5e6df] bg-white shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-[#eeefe9] px-5 py-4"><div className="min-w-0"><p className="truncate text-[11px] text-[#8b907f]">{selectedCard.noteTitle || "独立卡片"}</p><h2 className="mt-1 text-lg font-semibold text-[#35392f]">主动温习</h2></div><button onClick={() => setSelectedCard(null)} aria-label="关闭" className="grid size-8 shrink-0 place-items-center rounded-lg text-[#85897d] hover:bg-[#f1f2ed]"><X size={17} /></button></div><div className="flex-1 overflow-y-auto px-5 py-5"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#8c967f]">复习问题</p><div className="mt-2 whitespace-pre-wrap text-base font-medium leading-7 text-[#35392f]">{selectedCard.question || selectedCard.answer || selectedCard.excerpt}</div><div className="mt-5 rounded-xl border border-[#eee9da] bg-[#fcfaf3] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#9c9273]">上下文</p><div className="prose prose-sm mt-2 max-w-none break-words text-[#635f50]"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{selectedCard.excerpt || "（没有上下文）"}</ReactMarkdown></div></div><label className="mt-5 block text-xs font-medium text-[#686d61]">你的回答<textarea value={response} onChange={(event) => setResponse(event.target.value)} rows={4} placeholder="先回忆并写下答案" className="mt-1.5 w-full resize-y rounded-xl border border-[#e5e6df] bg-[#fcfcfa] px-3.5 py-3 text-sm leading-6 text-[#45493f] outline-none focus:border-[#bdc9b3]" /></label>{showAnswer && <div className="mt-4 rounded-xl border border-[#e7eadf] bg-[#f8f9f5] p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.13em] text-[#8c967f]">参考答案</p><div className="prose prose-sm mt-2 max-w-none break-words text-[#45493f]"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{selectedCard.answer || "（没有单独填写参考答案）"}</ReactMarkdown></div></div>}{reviewed && <div className="mt-4 rounded-xl bg-[#e9eee3] px-4 py-3 text-sm text-[#647555]">回答已保存，FSRS 已更新下次复习时间：{dueLabel(selectedCard.dueAt)}</div>}</div><div className="border-t border-[#eeefe9] bg-white p-5">
