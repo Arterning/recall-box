@@ -159,6 +159,33 @@
 .markdown-preview table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .markdown-preview th,
 .markdown-preview td { border: 1px solid #e5e7df; padding: 0.5rem 0.7rem; text-align: left; }
+
+.review-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.review-confetti span {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 12px;
+  border-radius: 2px;
+  opacity: 0;
+  animation: review-confetti-fall 2.8s ease-out forwards;
+}
+
+@keyframes review-confetti-fall {
+  0% { transform: translateY(-12px) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(390px) rotate(720deg); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review-confetti span { animation-duration: 0.01ms; }
+}
 .markdown-preview th { background: #f6f7f3; font-weight: 600; }
 .markdown-preview hr { margin: 1.5rem 0; border-color: #e7e9e1; }
 .markdown-preview .card-mark {
