@@ -18,6 +18,7 @@ func main() {
 
 	app := application.New(application.Options{
 		Name:        "Recall Box",
+		Icon:        appIcon,
 		Description: "本地知识管理与间隔复习",
 		OnShutdown:  func() { shutdownBackend(backend) },
 	})
