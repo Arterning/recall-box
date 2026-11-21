@@ -16,6 +16,7 @@ export function NotesPage() {
   const [draft, setDraft] = useState<CardDraft | null>(null)
   const [annotationDraft, setAnnotationDraft] = useState<string | null>(null)
   const [pendingAnnotationId, setPendingAnnotationId] = useState<number | null>(null)
+  const [savedAnnotationComment, setSavedAnnotationComment] = useState("")
   const [view, setView] = useState<"edit" | "preview">("preview")
   const [editing, setEditing] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -89,6 +90,8 @@ export function NotesPage() {
       setSelection(null)
       setDraft(null)
       setAnnotationDraft(null)
+      setPendingAnnotationId(null)
+      setSavedAnnotationComment("")
       setAnnotationPopover(null)
       setView("preview")
       await Promise.all([loadCards(id), loadAnnotations(id)])
@@ -105,6 +108,8 @@ export function NotesPage() {
     setSelection(null)
     setDraft(null)
     setAnnotationDraft(null)
+    setPendingAnnotationId(null)
+    setSavedAnnotationComment("")
     setAnnotationPopover(null)
     setView("edit")
   }
@@ -129,20 +134,38 @@ export function NotesPage() {
     setDraft({ question: makeClozeQuestion(note.content, selection.start, selection.end), answer: selection.excerpt })
   }
 
-  const beginAnnotation = () => {
+  const beginAnnotation = async (openEditor: boolean) => {
     if (!selection) return
     setDraft(null)
     setView("preview")
-    const id = -Date.now()
-    setPendingAnnotationId(id)
-    setAnnotations((current) => [{ id, noteId: note.id, excerpt: selection.excerpt, startOffset: selection.start, endOffset: selection.end, comment: "", anchorValid: true, createdAt: new Date().toISOString() }, ...current])
-    setAnnotationDraft("")
+    setBusy(true)
+    setError("")
+    try {
+      const savedNote = await persistNote()
+      const annotation = await api<Annotation>(`/api/notes/${savedNote.id}/annotations`, {
+        method: "POST",
+        body: JSON.stringify({ excerpt: selection.excerpt, sourceText: selection.sourceText, startOffset: selection.start, endOffset: selection.end, comment: "" }),
+      })
+      setAnnotations((current) => [annotation, ...current])
+      setPendingAnnotationId(annotation.id)
+      setSavedAnnotationComment("")
+      setAnnotationDraft(openEditor ? "" : null)
+      if (!openEditor) {
+        setSelection(null)
+        window.getSelection()?.removeAllRanges()
+      }
+    } catch (cause) {
+      setError(toErrorMessage(cause, "添加批注失败"))
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const cancelAnnotation = () => {
-    if (pendingAnnotationId !== null) setAnnotations((current) => current.filter((item) => item.id !== pendingAnnotationId))
+  const cancelAnnotation = async () => {
+    if (annotationDraft !== null && annotationDraft !== savedAnnotationComment) await saveAnnotation()
     setPendingAnnotationId(null)
     setAnnotationDraft(null)
+    setSelection(null)
   }
 
   const saveCard = async () => {
@@ -167,26 +190,26 @@ export function NotesPage() {
   }
 
   const saveAnnotation = async () => {
-    if (!selection || annotationDraft === null) return
+    if (pendingAnnotationId === null || annotationDraft === null || annotationDraft === savedAnnotationComment) return
     setBusy(true)
     setError("")
     try {
-      const savedNote = await persistNote()
-      const annotation = await api<Annotation>(`/api/notes/${savedNote.id}/annotations`, {
-        method: "POST",
-        body: JSON.stringify({ excerpt: selection.excerpt, sourceText: selection.sourceText, startOffset: selection.start, endOffset: selection.end, comment: annotationDraft }),
-      })
-      setAnnotations((current) => [annotation, ...current.filter((item) => item.id !== pendingAnnotationId)])
-      setPendingAnnotationId(null)
-      setAnnotationDraft(null)
-      setSelection(null)
-      setToast("批注已保存，原文已划线")
+      const annotation = await api<Annotation>(`/api/annotations/${pendingAnnotationId}`, { method: "PUT", body: JSON.stringify({ comment: annotationDraft }) })
+      setAnnotations((current) => current.map((item) => item.id === annotation.id ? annotation : item))
+      setSavedAnnotationComment(annotation.comment)
+      setToast("批注已自动保存")
     } catch (cause) {
-      setError(toErrorMessage(cause, "保存批注失败"))
+      setError(toErrorMessage(cause, "自动保存批注失败"))
     } finally {
       setBusy(false)
     }
   }
+
+  useEffect(() => {
+    if (pendingAnnotationId === null || annotationDraft === null || annotationDraft === savedAnnotationComment) return
+    const timer = window.setTimeout(() => void saveAnnotation(), 450)
+    return () => window.clearTimeout(timer)
+  }, [annotationDraft, pendingAnnotationId, savedAnnotationComment])
 
   const removeNote = async () => {
     if (!note.id || !window.confirm(`确定删除笔记“${note.title || "未命名笔记"}”及其批注和复习卡片吗？`)) return
@@ -222,12 +245,23 @@ export function NotesPage() {
       setAnnotations((current) => current.map((item) => item.id === updated.id ? updated : item))
       setAnnotationPopover({ ...annotationPopover, item: updated })
       setPopoverComment(updated.comment)
-      setEditingPopover(false)
     } catch (cause) {
       setError(toErrorMessage(cause, "更新批注失败"))
     } finally {
       setBusy(false)
     }
+  }
+
+  useEffect(() => {
+    if (!annotationPopover || !editingPopover || popoverComment === annotationPopover.item.comment) return
+    const timer = window.setTimeout(() => void savePopoverAnnotation(), 450)
+    return () => window.clearTimeout(timer)
+  }, [annotationPopover, editingPopover, popoverComment])
+
+  const closeAnnotationPopover = async () => {
+    if (annotationPopover && editingPopover && popoverComment !== annotationPopover.item.comment) await savePopoverAnnotation()
+    setAnnotationPopover(null)
+    setEditingPopover(false)
   }
 
   const jumpToHeading = (id: string) => {
@@ -288,12 +322,11 @@ export function NotesPage() {
       {showOutline && <aside className="flex min-h-[260px] flex-col rounded-2xl border border-[#e5e6df] bg-[#fbfbf8] p-4 lg:min-h-0">
         <div className="flex items-center justify-between border-b border-[#e9eae4] pb-3"><div><p className="text-xs font-semibold text-[#686d61]">Markdown 大纲</p><p className="mt-1 text-[11px] text-[#a0a297]">{outline.length} 个标题</p></div><ListTree size={16} className="text-[#7c896f]" /></div>
         {draft && <div className="mt-3 rounded-xl border border-[#dfe5d7] bg-white p-3.5 shadow-sm"><div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#5d6b53]">新建复习卡</p><button onClick={() => setDraft(null)} aria-label="关闭"><X size={14} className="text-[#9da095]" /></button></div><p className="mt-3 text-[10px] font-medium text-[#8b8e83]">挖空上下文预览</p><div className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap rounded-lg border border-[#eee9da] bg-[#fcfaf3] px-2.5 py-2 text-xs leading-5 text-[#635f50]">{draft.question || "（问题为空）"}</div><label className="mt-3 block text-[10px] font-medium text-[#8b8e83]">复习时看到的问题（可编辑）<textarea value={draft.question} onChange={(event) => setDraft({ ...draft, question: event.target.value })} rows={3} className="mt-1.5 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#bdc9b3]" /></label><label className="mt-2.5 block text-[10px] font-medium text-[#8b8e83]">参考答案（选中的重点）<textarea value={draft.answer} onChange={(event) => setDraft({ ...draft, answer: event.target.value })} rows={3} className="mt-1.5 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#bdc9b3]" /></label><p className="mt-2 text-[10px] leading-4 text-[#a0a297]">默认问题会去掉选中的重点，并保留所在段落的其余上下文。</p><button disabled={busy || !draft.question.trim() || !draft.answer.trim()} onClick={() => void saveCard()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#30352a] py-2.5 text-xs font-medium text-white hover:bg-[#41473a] disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={13} /> : <Plus size={13} />}创建复习卡</button></div>}
-        {annotationDraft !== null && <div className="mt-3 rounded-xl border border-[#e8dfc8] bg-white p-3.5 shadow-sm"><div className="flex items-center justify-between"><p className="text-[11px] font-semibold text-[#887b58]">添加批注</p><button onClick={cancelAnnotation} aria-label="关闭"><X size={14} className="text-[#9da095]" /></button></div><p className="mt-2 line-clamp-3 border-l-2 border-[#d8c98d] pl-2 text-[10px] leading-4 text-[#858273]">{selection?.excerpt}</p><textarea autoFocus value={annotationDraft} onChange={(event) => setAnnotationDraft(event.target.value)} rows={3} placeholder="写下你的补充、想法或疑问…（可留空）" className="mt-2 w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#d4c99d]" /><button disabled={busy} onClick={() => void saveAnnotation()} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg bg-[#82764f] py-2.5 text-xs font-medium text-white hover:bg-[#726744] disabled:opacity-50">{busy ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}保存批注</button></div>}
-        {!draft && annotationDraft === null && <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto">{outline.length ? outline.map((heading) => <button key={heading.id} onClick={() => jumpToHeading(heading.id)} title={heading.title} className="flex w-full items-center gap-1.5 rounded-lg py-2 pr-2 text-left text-xs text-[#686d61] hover:bg-[#f0f1eb] hover:text-[#41463a]" style={{ paddingLeft: `${8 + (heading.level - 1) * 12}px` }}><ChevronRight size={12} className="shrink-0 text-[#a4aa9a]" /><span className="truncate">{heading.title}</span></button>) : <div className="px-2 py-6 text-center text-xs text-[#9b9e93]">笔记中还没有 Markdown 标题</div>}</nav>}
+        {!draft && <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto">{outline.length ? outline.map((heading) => <button key={heading.id} onClick={() => jumpToHeading(heading.id)} title={heading.title} className="flex w-full items-center gap-1.5 rounded-lg py-2 pr-2 text-left text-xs text-[#686d61] hover:bg-[#f0f1eb] hover:text-[#41463a]" style={{ paddingLeft: `${8 + (heading.level - 1) * 12}px` }}><ChevronRight size={12} className="shrink-0 text-[#a4aa9a]" /><span className="truncate">{heading.title}</span></button>) : <div className="px-2 py-6 text-center text-xs text-[#9b9e93]">笔记中还没有 Markdown 标题</div>}</nav>}
       </aside>}
 
-      {annotationPopover && <div className="fixed z-50 w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-xl border border-[#e5e6df] bg-white shadow-[0_16px_45px_-18px_rgba(35,39,30,.45)]" style={{ left: annotationPopover.x, top: annotationPopover.y }} onMouseDown={(event) => event.stopPropagation()}><div className="flex items-center justify-between border-b border-[#eeefe9] px-3 py-2"><span className="text-xs font-semibold text-[#686d61]">批注</span><button onClick={() => { setAnnotationPopover(null); setEditingPopover(false) }} aria-label="关闭批注" className="grid size-6 place-items-center rounded-md text-[#85897d] hover:bg-[#f1f2ed]"><X size={13} /></button></div>{editingPopover ? <div className="p-3"><textarea autoFocus value={popoverComment} onChange={(event) => setPopoverComment(event.target.value)} rows={3} placeholder="批注可以留空" className="w-full resize-y rounded-lg border border-[#e5e6df] bg-[#fcfcfa] px-3 py-2 text-sm text-[#45493f] outline-none focus:border-[#bdc9b3]" /><div className="mt-2 flex justify-end gap-1.5"><button disabled={busy} onClick={() => { setEditingPopover(false); setPopoverComment(annotationPopover.item.comment) }} className="rounded-lg border border-[#e2e4dc] px-3 py-1.5 text-xs text-[#74796d]">取消</button><button disabled={busy} onClick={() => void savePopoverAnnotation()} className="rounded-lg bg-[#30352a] px-3 py-1.5 text-xs text-white disabled:opacity-50">{busy ? "保存中…" : "保存修改"}</button></div></div> : <div className="p-3"><p className="whitespace-pre-wrap text-sm leading-6 text-[#45493f]">{annotationPopover.item.comment || <span className="text-[#a1a398]">（空批注）</span>}</p><button onClick={() => setEditingPopover(true)} className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-3 py-1.5 text-xs text-[#666c5d] hover:bg-[#f8f9f5]"><PencilLine size={12} />编辑批注</button></div>}</div>}      {selection && !draft && annotationDraft === null && <div className="fixed z-40 flex items-center gap-1 rounded-xl border border-[#e3e5dd] bg-white p-1.5 shadow-[0_12px_38px_-18px_rgba(35,39,30,.4)]" style={{ left: selection.x, top: selection.y }} onMouseDown={(event) => event.preventDefault()}><button onClick={beginAnnotation} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[#7a6c45] hover:bg-[#f6f2e6]"><MessageSquareText size={14} />批注</button><span className="h-5 w-px bg-[#ecece6]" /><button onClick={beginCard} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-[#57664e] hover:bg-[#edf1e9]"><Highlighter size={14} />创建复习卡</button><button onClick={() => setSelection(null)} aria-label="关闭" className="grid size-7 place-items-center rounded-lg text-[#a1a398] hover:bg-[#f3f4ef]"><X size={13} /></button></div>}
-      {toast && <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-[#30352a] px-4 py-2.5 text-xs text-white shadow-lg"><Check size={14} className="text-[#b8cba9]" />{toast}</div>}
+      {annotationPopover && <div className="fixed z-50 w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-xl border border-[#e5e6df] bg-white shadow-[0_16px_45px_-18px_rgba(35,39,30,.45)]" style={{ left: annotationPopover.x, top: annotationPopover.y }} onMouseDown={(event) => event.stopPropagation()}><div className="flex items-center justify-between border-b border-[#eeefe9] px-3 py-2"><span className="text-xs font-semibold text-[#686d61]">批注</span><button onClick={() => void closeAnnotationPopover()} aria-label="关闭批注" className="grid size-6 place-items-center rounded-md text-[#85897d] hover:bg-[#f1f2ed]"><X size={13} /></button></div>{editingPopover ? <div className="p-3"><textarea autoFocus value={popoverComment} onChange={(event) => setPopoverComment(event.target.value)} rows={3} placeholder="批注可以留空" className="w-full resize-y rounded-lg border border-[#e5e6df] bg-[#fcfcfa] px-3 py-2 text-sm text-[#45493f] outline-none focus:border-[#bdc9b3]" /><div className="mt-2 flex justify-end gap-1.5"><button disabled={busy} onClick={() => { setEditingPopover(false); setPopoverComment(annotationPopover.item.comment) }} className="rounded-lg border border-[#e2e4dc] px-3 py-1.5 text-xs text-[#74796d]">取消</button><span className="px-2 text-[10px] text-[#8e9287]">输入后自动保存</span></div></div> : <div className="p-3"><p className="whitespace-pre-wrap text-sm leading-6 text-[#45493f]">{annotationPopover.item.comment || <span className="text-[#a1a398]">（空批注）</span>}</p><button onClick={() => setEditingPopover(true)} className="mt-3 flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-3 py-1.5 text-xs text-[#666c5d] hover:bg-[#f8f9f5]"><PencilLine size={12} />编辑批注</button></div>}</div>}      {selection && !draft && annotationDraft === null && <div className="fixed z-40 w-max rounded-xl border border-[#e3e5dd] bg-white p-1.5 shadow-[0_12px_38px_-18px_rgba(35,39,30,.4)]" style={{ left: Math.max(12, Math.min((selection.right ?? selection.x + 160) - 160, window.innerWidth - 172)), top: Math.max(12, Math.min((selection.bottom ?? selection.y + 48) + 8, window.innerHeight - 184)) }} onMouseDown={(event) => event.preventDefault()}><div className="flex w-40 flex-col gap-0.5"><button onClick={() => void beginAnnotation(true)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-[#7a6c45] hover:bg-[#f6f2e6]"><MessageSquareText size={14} />批注</button><button disabled={busy} onClick={() => void beginAnnotation(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-[#7a6c45] hover:bg-[#f6f2e6] disabled:opacity-50"><Highlighter size={14} />{busy ? "保存中…" : "划线"}</button><button onClick={beginCard} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-medium text-[#57664e] hover:bg-[#edf1e9]"><Plus size={14} />创建复习卡</button><button onClick={() => { setSelection(null); window.getSelection()?.removeAllRanges() }} className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-[#85897d] hover:bg-[#f3f4ef]"><X size={14} />取消选中</button></div></div>}
+      {selection && annotationDraft !== null && <div className="fixed z-40 w-[min(300px,calc(100vw-24px))] overflow-hidden rounded-xl border border-[#e5e6df] bg-white shadow-[0_12px_38px_-18px_rgba(35,39,30,.4)]" style={{ left: Math.max(12, Math.min((selection.right ?? selection.x + 280) - 288, window.innerWidth - 300)), top: Math.max(12, Math.min((selection.bottom ?? selection.y + 48) + 8, window.innerHeight - 220)) }} onMouseDown={(event) => event.stopPropagation()}><div className="flex items-center justify-between border-b border-[#eeefe9] px-3 py-2"><span className="text-xs font-semibold text-[#686d61]">添加批注</span><button onClick={() => void cancelAnnotation()} aria-label="关闭批注编辑" className="grid size-6 place-items-center rounded-md text-[#85897d] hover:bg-[#f1f2ed]"><X size={13} /></button></div><div className="p-3"><p className="mb-2 line-clamp-2 border-l-2 border-[#d8c98d] pl-2 text-[10px] leading-4 text-[#858273]">{selection.excerpt}</p><textarea autoFocus value={annotationDraft} onChange={(event) => setAnnotationDraft(event.target.value)} rows={3} placeholder="写下你的补充、想法或疑问…（可留空）" className="w-full resize-y rounded-lg border border-[#e9eae4] bg-[#fcfcfa] px-2.5 py-2 text-xs leading-5 text-[#45493f] outline-none focus:border-[#d4c99d]" /><p className="mt-2 text-[10px] text-[#a0a297]">批注已经保存；输入内容会自动保存。</p></div></div>}      {toast && <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-[#30352a] px-4 py-2.5 text-xs text-white shadow-lg"><Check size={14} className="text-[#b8cba9]" />{toast}</div>}
     </div>
   )
 }
