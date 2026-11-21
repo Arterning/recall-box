@@ -7,6 +7,9 @@ import {
   NotebookPen,
   Moon,
   Sun,
+  FolderOpen,
+  Copy,
+  X,
 } from "lucide-react"
 import { NavLink, Outlet } from "react-router"
 import { useEffect, useState } from "react"
@@ -24,6 +27,9 @@ const navigation = [
 
 export function AppShell() {
   const [due, setDue] = useState(0)
+  const [dataDirectory, setDataDirectory] = useState<{ path: string; database: string; attachments: string } | null>(null)
+  const [showDataDirectory, setShowDataDirectory] = useState(false)
+  const [directoryMessage, setDirectoryMessage] = useState("")
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
@@ -33,6 +39,41 @@ export function AppShell() {
     }, 60_000)
     return () => window.clearInterval(timer)
   }, [])
+
+  const toggleDataDirectory = async () => {
+    if (showDataDirectory) {
+      setShowDataDirectory(false)
+      return
+    }
+    setDirectoryMessage("")
+    try {
+      const result = dataDirectory ?? await api<{ path: string; database: string; attachments: string }>("/api/system/data-dir")
+      setDataDirectory(result)
+      setShowDataDirectory(true)
+    } catch (cause) {
+      setDirectoryMessage(cause instanceof Error ? cause.message : "无法读取数据目录")
+      setShowDataDirectory(true)
+    }
+  }
+
+  const copyDataDirectory = async () => {
+    if (!dataDirectory) return
+    try {
+      await navigator.clipboard.writeText(dataDirectory.path)
+      setDirectoryMessage("路径已复制")
+    } catch {
+      setDirectoryMessage("无法访问剪贴板，请手动复制上方路径")
+    }
+  }
+
+  const openDataDirectory = async () => {
+    try {
+      await api<void>("/api/system/open-data-dir", { method: "POST" })
+      setDirectoryMessage("已在文件管理器中打开")
+    } catch (cause) {
+      setDirectoryMessage(cause instanceof Error ? cause.message : "无法打开数据目录")
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#f4f4ef] text-[#262920]">
@@ -60,7 +101,7 @@ export function AppShell() {
 
           <section className="min-h-0 min-w-0"><Outlet /></section>
         </div>
-        <footer className="mt-4 flex shrink-0 items-center justify-between border-t border-[#e4e5de] pt-3 text-[10px] text-[#aaaca2]"><span>Recall Box · 本地知识复习</span><span className="hidden sm:block">内容保存在此设备的 SQLite 数据库</span></footer>
+        <footer className="relative mt-4 flex shrink-0 items-center justify-between border-t border-[#e4e5de] pt-3 text-[10px] text-[#aaaca2]"><span>Recall Box · 本地知识复习</span><div className="relative"><button onClick={() => void toggleDataDirectory()} className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[#83877c] transition hover:bg-white/70 hover:text-[#4f5549]"><FolderOpen size={13} />数据目录</button>{showDataDirectory && <div className="absolute bottom-full right-0 z-50 mb-2 w-[min(390px,calc(100vw-32px))] rounded-xl border border-[#e5e6df] bg-white p-3.5 text-left text-[#5c6155] shadow-[0_14px_42px_-18px_rgba(35,39,30,.4)]"><div className="flex items-center justify-between"><p className="text-xs font-semibold">本地数据目录</p><button onClick={() => setShowDataDirectory(false)} aria-label="关闭" className="grid size-6 place-items-center rounded-md text-[#85897d] hover:bg-[#f1f2ed]"><X size={13} /></button></div><code className="mt-2 block break-all rounded-lg bg-[#f7f8f4] px-2.5 py-2 font-mono text-[10px] leading-4 text-[#62675b]">{dataDirectory?.path || directoryMessage || "正在读取目录…"}</code><div className="mt-2 flex gap-2"><button disabled={!dataDirectory} onClick={() => void copyDataDirectory()} className="flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-2.5 py-1.5 text-[10px] hover:bg-[#f8f9f5] disabled:opacity-50"><Copy size={12} />复制路径</button><button disabled={!dataDirectory} onClick={() => void openDataDirectory()} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-2.5 py-1.5 text-[10px] text-white hover:bg-[#41473a] disabled:opacity-50"><FolderOpen size={12} />打开文件夹</button></div><p className="mt-2 text-[9px] leading-4 text-[#999c91]">目录内包含 SQLite 数据库和图片附件。手动备份时请先退出 Recall Box，再复制整个目录。</p>{directoryMessage && <p className="mt-1 text-[9px] text-[#718360]">{directoryMessage}</p>}</div>}</div></footer>
       </div>
     </main>
   )

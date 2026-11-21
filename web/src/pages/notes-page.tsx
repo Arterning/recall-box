@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react"
 import { BookOpen, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FilePlus2, FileText, Highlighter, ListTree, LoaderCircle, MessageSquareText, PencilLine, Plus, Search, Trash2, Upload, X } from "lucide-react"
 import { api, emptyNote, toErrorMessage, type Annotation, type Card, type Note, type NoteListResult } from "@/lib/api"
 import { MarkdownNote, markdownOutline, type PreviewSelection } from "@/components/markdown-note"
@@ -27,6 +27,7 @@ export function NotesPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
   const [toast, setToast] = useState("")
+  const [imageUploading, setImageUploading] = useState(false)
   const [showOutline, setShowOutline] = useState(true)
   const [hideAnnotations, setHideAnnotations] = useState(true)
   const [annotationPopover, setAnnotationPopover] = useState<{ item: Annotation; x: number; y: number } | null>(null)
@@ -304,6 +305,54 @@ export function NotesPage() {
     }
   }
 
+  const pasteImage = async (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null)
+    if (!files.length) return
+    event.preventDefault()
+    if (imageUploading) return
+
+    const editor = event.currentTarget
+    const start = editor.selectionStart
+    const end = editor.selectionEnd
+    const before = note.content.slice(0, start)
+    const after = note.content.slice(end)
+    const noteID = note.id
+    setImageUploading(true)
+    setError("")
+    try {
+      const references: string[] = []
+      for (const [index, file] of files.entries()) {
+        const form = new FormData()
+        form.append("file", file, file.name || `pasted-image-${index + 1}.png`)
+        const response = await fetch("/api/assets", { method: "POST", body: form })
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({})) as { error?: string }
+          throw new Error(result.error || `图片上传失败（${response.status}）`)
+        }
+        const result = await response.json() as { url: string }
+        references.push(`![粘贴图片](${result.url})`)
+      }
+      const insertion = references.join("\n\n")
+      const prefix = before && !before.endsWith("\n\n") ? (before.endsWith("\n") ? "\n" : "\n\n") : ""
+      const suffix = after && !after.startsWith("\n\n") ? (after.startsWith("\n") ? "\n" : "\n\n") : ""
+      const nextContent = before + prefix + insertion + suffix + after
+      setNote((current) => current.id === noteID ? { ...current, content: nextContent } : current)
+      requestAnimationFrame(() => {
+        editor.focus()
+        const caret = before.length + prefix.length + insertion.length + suffix.length
+        editor.setSelectionRange(caret, caret)
+      })
+      setToast("图片已插入笔记")
+    } catch (cause) {
+      setError(toErrorMessage(cause, "图片上传失败"))
+    } finally {
+      setImageUploading(false)
+    }
+  }
+
   const baseline = notes.find((item) => item.id === note.id)
   const dirty = !note.id || baseline?.content !== note.content || baseline?.title !== note.title || baseline?.tags !== note.tags
 
@@ -328,7 +377,7 @@ export function NotesPage() {
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between px-6 pt-4 text-[10px] text-[#a6a89e]"><span>{view === "edit" ? "Markdown 编辑器 · 选中原文后可批注或创建问答卡" : "预览 · 选择一段内容添加批注或复习卡片"}</span><span>{view === "edit" ? "Ctrl / ⌘ + S 保存" : "点击“编辑”继续修改"}</span></div>
-            {view === "edit" ? <textarea ref={editorRef} value={note.content} onChange={(event) => { setNote({ ...note, content: event.target.value }); setSelection(null) }} onMouseUp={captureEditorSelection} onKeyUp={captureEditorSelection} onSelect={captureEditorSelection} placeholder="从一个想法开始…\n\n所有笔记都使用 Markdown。选中一段文字，可添加批注或创建复习卡片。" spellCheck={false} className="min-h-0 flex-1 resize-none px-6 pb-8 pt-5 font-mono text-[13px] leading-[1.9] text-[#45493f] outline-none placeholder:font-sans placeholder:text-[#c0c2b9]" /> : <article className="min-h-0 flex-1 overflow-y-auto px-7 pb-10 pt-5"><MarkdownNote content={note.content} cards={cards} annotations={annotations} onSelect={setSelection} onAnnotationClick={openAnnotation} hideAnnotations={hideAnnotations} /></article>}
+            {view === "edit" ? <textarea ref={editorRef} value={note.content} disabled={imageUploading} onPaste={(event) => void pasteImage(event)} onChange={(event) => { setNote({ ...note, content: event.target.value }); setSelection(null) }} onMouseUp={captureEditorSelection} onKeyUp={captureEditorSelection} onSelect={captureEditorSelection} placeholder="从一个想法开始…\n\n所有笔记都使用 Markdown。选中一段文字，可添加批注或创建复习卡片。也可以粘贴图片。" spellCheck={false} className="min-h-0 flex-1 resize-none px-6 pb-8 pt-5 font-mono text-[13px] leading-[1.9] text-[#45493f] outline-none placeholder:font-sans placeholder:text-[#c0c2b9] disabled:opacity-70" /> : <article className="min-h-0 flex-1 overflow-y-auto px-7 pb-10 pt-5"><MarkdownNote content={note.content} cards={cards} annotations={annotations} onSelect={setSelection} onAnnotationClick={openAnnotation} hideAnnotations={hideAnnotations} /></article>}
             <div className="flex items-center justify-between border-t border-[#f0f0eb] px-5 py-2.5 text-[10px] text-[#a5a79d]"><span>{note.content.length.toLocaleString()} 字符</span>{view === "edit" ? selection ? <span>使用选区菜单添加批注或卡片</span> : <span>选中一段文字以添加批注或卡片</span> : <span>批注会划线显示，悬停可查看</span>}</div>
           </div>
         </> : <div className="flex flex-1 flex-col items-center justify-center px-8 text-center"><div className="grid size-14 place-items-center rounded-2xl bg-[#f0f2ec] text-[#829078]"><FilePlus2 size={23} /></div><h1 className="mt-5 text-lg font-semibold tracking-tight">把值得记住的内容放进来</h1><p className="mt-2 max-w-sm text-sm leading-6 text-[#85897d]">创建一篇笔记，粘贴或导入 Markdown 内容，再选择文字添加批注或复习卡片。</p><div className="mt-6 flex gap-2"><button onClick={createNote} className="flex items-center gap-2 rounded-xl bg-[#30352a] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#41473a]"><Plus size={15} />新建笔记</button><button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 rounded-xl border border-[#e2e4dc] bg-white px-4 py-2.5 text-sm text-[#5e6357] hover:bg-[#f8f9f5]"><Upload size={15} />导入文件</button></div></div>}

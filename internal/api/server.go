@@ -7,12 +7,13 @@ import (
 )
 
 type Server struct {
-	db  *gorm.DB
-	mux *http.ServeMux
+	db      *gorm.DB
+	mux     *http.ServeMux
+	dataDir string
 }
 
-func New(db *gorm.DB) *Server {
-	s := &Server{db: db, mux: http.NewServeMux()}
+func New(db *gorm.DB, dataDir string) *Server {
+	s := &Server{db: db, mux: http.NewServeMux(), dataDir: dataDir}
 	s.routes()
 	return s
 }
@@ -23,6 +24,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now().UTC()})
 	})
+	s.mux.HandleFunc("GET /api/system/data-dir", s.getDataDir)
+	s.mux.HandleFunc("POST /api/system/open-data-dir", s.openDataDir)
+	s.mux.HandleFunc("POST /api/assets", s.uploadAsset)
+	s.mux.HandleFunc("GET /api/assets/{name}", s.getAsset)
 	s.mux.HandleFunc("GET /api/notes", s.listNotes)
 	s.mux.HandleFunc("POST /api/notes", s.createNote)
 	s.mux.HandleFunc("GET /api/notes/{id}", s.getNote)

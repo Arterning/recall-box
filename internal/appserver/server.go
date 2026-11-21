@@ -48,6 +48,14 @@ func StartOnPort(port string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	dataDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(filepath.Join(dataDir, "attachments"), 0700); err != nil {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+		return nil, fmt.Errorf("create attachments directory: %w", err)
+	}
 	if port == "" {
 		port = "0"
 	}
@@ -60,7 +68,7 @@ func StartOnPort(port string) (*Server, error) {
 		return nil, fmt.Errorf("listen on local port: %w", err)
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/api/", api.New(db))
+	mux.Handle("/api/", api.New(db, dataDir))
 	mux.Handle("/", webui.Handler())
 	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	sqlDB, err := db.DB()
