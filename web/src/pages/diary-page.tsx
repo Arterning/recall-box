@@ -94,7 +94,7 @@ export function DiaryPage() {
     setSelectedDate(`${key}-01`)
   }
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!dirty || saving) return
     setSaving(true)
     setError("")
@@ -109,7 +109,18 @@ export function DiaryPage() {
     } finally {
       setSaving(false)
     }
-  }
+  }, [content, dirty, loadEntries, month, saving, selectedDate])
+
+  useEffect(() => {
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault()
+        void save()
+      }
+    }
+    window.addEventListener("keydown", handleSaveShortcut)
+    return () => window.removeEventListener("keydown", handleSaveShortcut)
+  }, [save])
 
   const remove = async () => {
     if (!entry.id || !window.confirm(`确定删除 ${displayDate(selectedDate)} 的日记吗？`)) return
@@ -133,7 +144,7 @@ export function DiaryPage() {
         <div className="flex items-center justify-between"><div><p className="text-xs font-semibold text-[#686d61]">学习日历</p><p className="mt-1 text-[11px] text-[#a0a297]">{entries.length} 天有记录</p></div><CalendarDays size={17} className="text-[#7c896f]" /></div>
         <div className="mt-4 flex items-center justify-between"><button onClick={() => moveMonth(-1)} aria-label="上个月" className="grid size-8 place-items-center rounded-lg text-[#74796d] hover:bg-white"><ChevronLeft size={16} /></button><p className="text-sm font-semibold text-[#4a4f43]">{new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "long" }).format(monthDate)}</p><button onClick={() => moveMonth(1)} aria-label="下个月" className="grid size-8 place-items-center rounded-lg text-[#74796d] hover:bg-white"><ChevronRight size={16} /></button></div>
         <div className="mt-3 grid grid-cols-7 text-center text-[10px] text-[#a0a297]">{"日一二三四五六".split("").map((day) => <span key={day} className="py-1">{day}</span>)}</div>
-        <div className="grid grid-cols-7 gap-y-1">{calendarCells.map((day, index) => day ? <button key={day} onClick={() => chooseDate(day)} className={`relative mx-auto grid size-8 place-items-center rounded-lg text-xs transition ${day === selectedDate ? "bg-[#30352a] font-semibold text-white" : day === today ? "bg-[#e9eee3] font-semibold text-[#5d744e]" : "text-[#555b4e] hover:bg-white"}`}><span>{Number(day.slice(-2))}</span>{entryDates.has(day) && <span className={`absolute bottom-1 size-1 rounded-full ${day === selectedDate ? "bg-[#c5d3b6]" : "bg-[#91a27f]"}`} />}</button> : <span key={`empty-${index}`} />)}</div>
+        <div className="grid grid-cols-7 gap-y-1">{calendarCells.map((day, index) => day ? <button key={day} onClick={() => chooseDate(day)} aria-label={`${Number(day.slice(-2))}日${entryDates.has(day) ? "，有日记" : ""}`} className={`relative mx-auto grid size-8 place-items-center rounded-lg text-xs transition ${day === selectedDate ? "bg-[#30352a] font-semibold text-white" : day === today ? "bg-[#e9eee3] font-semibold text-[#5d744e]" : "text-[#555b4e] hover:bg-white"}`}><span>{Number(day.slice(-2))}</span>{entryDates.has(day) && <span className={`absolute right-1 top-1 size-1.5 rounded-full ring-1 ring-white/80 ${day === selectedDate ? "bg-[#d5e6c7]" : "bg-[#82996d]"}`} />}</button> : <span key={`empty-${index}`} />)}</div>
         <div className="mt-5 flex min-h-0 flex-1 flex-col border-t border-[#e9eae4] pt-3"><p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a0a297]">本月记录</p><div className="min-h-0 flex-1 space-y-1 overflow-y-auto">{loadingEntries ? <p className="px-2 py-3 text-xs text-[#96988f]">正在加载…</p> : entries.length ? entries.map((item) => <button key={item.id} onClick={() => chooseDate(item.date)} className={`w-full rounded-lg px-2.5 py-2 text-left ${item.date === selectedDate ? "bg-[#e9ece3]" : "hover:bg-white"}`}><div className="flex justify-between gap-2"><span className="text-xs font-medium text-[#4f5549]">{displayDate(item.date, { month: "numeric", day: "numeric", weekday: "short" })}</span><span className="text-[9px] text-[#a0a297]">{displayTime(item.updatedAt)}</span></div><p className="mt-1 truncate text-[10px] text-[#898d82]">{item.excerpt || "（空日记）"}</p></button>) : <p className="px-2 py-3 text-xs text-[#96988f]">本月还没有日记，选一天开始记录。</p>}</div></div>
       </aside>
 
