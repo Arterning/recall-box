@@ -25,6 +25,8 @@ export type PreviewSelection = {
   sourceText: string
   x: number
   y: number
+  right?: number
+  bottom?: number
 }
 
 export function MarkdownNote({
@@ -66,6 +68,8 @@ export function MarkdownNote({
       sourceText: content.slice(start, end),
       x: Math.max(16, Math.min(window.innerWidth - 280, rect.left + rect.width / 2 - 112)),
       y: Math.max(10, rect.top - 48),
+      right: rect.right,
+      bottom: rect.bottom,
     })
   }
 
