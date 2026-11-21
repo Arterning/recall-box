@@ -60,17 +60,33 @@ func (s *Server) routes() {
 }
 
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if pageSize < 1 {
+		pageSize = 30
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
 	var notes []model.Note
-	q := s.db.Order("updated_at desc")
+	q := s.db.Model(&model.Note{}).Order("updated_at desc").Order("id desc")
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
 		like := "%" + strings.ReplaceAll(search, "%", "\\%") + "%"
 		q = q.Where("title LIKE ? OR content LIKE ?", like, like)
 	}
-	if err := q.Find(&notes).Error; err != nil {
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, notes)
+	if err := q.Offset((page - 1) * pageSize).Limit(pageSize).Find(&notes).Error; err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": notes, "total": total, "page": page, "pageSize": pageSize})
 }
 
 func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {

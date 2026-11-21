@@ -6,6 +6,7 @@ export type Note = {
   tags: string
   updatedAt: string
 }
+export type NoteListResult = { items: Note[]; total: number; page: number; pageSize: number }
 
 export type Card = {
   id: number

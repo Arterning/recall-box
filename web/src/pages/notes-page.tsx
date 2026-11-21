@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { BookOpen, Check, ChevronRight, Eye, EyeOff, FilePlus2, FileText, Highlighter, ListTree, LoaderCircle, MessageSquareText, PencilLine, Plus, Search, Trash2, Upload, X } from "lucide-react"
-import { api, emptyNote, toErrorMessage, type Annotation, type Card, type Note } from "@/lib/api"
+import { BookOpen, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FilePlus2, FileText, Highlighter, ListTree, LoaderCircle, MessageSquareText, PencilLine, Plus, Search, Trash2, Upload, X } from "lucide-react"
+import { api, emptyNote, toErrorMessage, type Annotation, type Card, type Note, type NoteListResult } from "@/lib/api"
 import { MarkdownNote, markdownOutline, type PreviewSelection } from "@/components/markdown-note"
 
 type Selection = PreviewSelection
@@ -8,6 +8,9 @@ type CardDraft = { question: string; answer: string }
 
 export function NotesPage() {
   const [notes, setNotes] = useState<Note[]>([])
+  const [noteTotal, setNoteTotal] = useState(0)
+  const [notesPage, setNotesPage] = useState(1)
+  const notesPageSize = 30
   const [note, setNote] = useState<Note>(emptyNote)
   const [cards, setCards] = useState<Card[]>([])
   const [annotations, setAnnotations] = useState<Annotation[]>([])
@@ -33,19 +36,26 @@ export function NotesPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const outline = useMemo(() => markdownOutline(note.content), [note.content])
 
-  const loadNotes = useCallback(async (search: string) => {
-    setNotes(await api<Note[]>(`/api/notes${search ? `?q=${encodeURIComponent(search)}` : ""}`))
+  const loadNotes = useCallback(async (search: string, page: number) => {
+    setLoading(true)
+    const params = new URLSearchParams({ page: String(page), pageSize: String(notesPageSize) })
+    if (search.trim()) params.set("q", search.trim())
+    try {
+      const result = await api<NoteListResult>(`/api/notes?${params}`)
+      setNotes(result.items)
+      setNoteTotal(result.total)
+    } finally {
+      setLoading(false)
+    }
   }, [])
   const loadCards = useCallback(async (noteId: number) => setCards(await api<Card[]>(`/api/notes/${noteId}/cards`)), [])
   const loadAnnotations = useCallback(async (noteId: number) => setAnnotations(await api<Annotation[]>(`/api/notes/${noteId}/annotations`)), [])
 
   useEffect(() => {
-    loadNotes("").catch((cause: unknown) => setError(toErrorMessage(cause, "无法加载笔记"))).finally(() => setLoading(false))
-  }, [loadNotes])
-  useEffect(() => {
-    const timer = window.setTimeout(() => loadNotes(query).catch((cause: unknown) => setError(toErrorMessage(cause, "搜索失败"))), 180)
+    const timer = window.setTimeout(() => loadNotes(query, notesPage).catch((cause: unknown) => setError(toErrorMessage(cause, "加载笔记失败"))), 180)
     return () => window.clearTimeout(timer)
-  }, [query, loadNotes])
+  }, [query, notesPage, loadNotes])
+  useEffect(() => { setNotesPage(1) }, [query])
   useEffect(() => {
     if (!toast) return
     const timer = window.setTimeout(() => setToast(""), 2400)
@@ -53,6 +63,7 @@ export function NotesPage() {
   }, [toast])
 
   const persistNote = useCallback(async () => {
+    const isNew = !note.id
     const payload = { title: note.title.trim() || "未命名笔记", content: note.content, format: "markdown", tags: note.tags }
     setSaving(true)
     try {
@@ -62,13 +73,15 @@ export function NotesPage() {
       setNote(saved)
       setEditing(true)
       await Promise.all([loadCards(saved.id), loadAnnotations(saved.id)])
-      setNotes((current) => [saved, ...current.filter((item) => item.id !== saved.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
+      const listPage = isNew ? 1 : notesPage
+      if (isNew) setNotesPage(1)
+      await loadNotes(query, listPage)
       setToast("笔记已保存")
       return saved
     } finally {
       setSaving(false)
     }
-  }, [loadAnnotations, loadCards, note])
+  }, [loadAnnotations, loadCards, loadNotes, note, notesPage, query])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -217,6 +230,8 @@ export function NotesPage() {
     try {
       await api<void>(`/api/notes/${note.id}`, { method: "DELETE" })
       setNotes((current) => current.filter((item) => item.id !== note.id))
+      setNoteTotal((total) => Math.max(0, total - 1))
+      if (notes.length === 1 && notesPage > 1) setNotesPage((page) => page - 1)
       setNote(emptyNote)
       setCards([])
       setAnnotations([])
@@ -296,12 +311,12 @@ export function NotesPage() {
     <div className={`grid min-h-[calc(100vh-8.5rem)] gap-4 lg:h-[calc(100vh-11rem)] lg:min-h-[520px] ${showOutline ? "lg:grid-cols-[230px_minmax(0,1fr)_240px]" : "lg:grid-cols-[230px_minmax(0,1fr)]"}`}>
       <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" className="hidden" onChange={(event) => void importFile(event.target.files?.[0])} />
       <aside className="flex min-h-[190px] flex-col rounded-2xl border border-[#e5e6df] bg-[#fbfbf8] p-3.5 lg:min-h-0">
-        <div className="flex items-center justify-between px-1 pb-3"><div><p className="text-xs font-semibold text-[#72766b]">我的笔记</p><p className="mt-1 text-[11px] text-[#a0a297]">{notes.length} 篇笔记</p></div><button onClick={createNote} title="新建笔记" className="grid size-8 place-items-center rounded-lg bg-[#30352a] text-white hover:bg-[#41473a]"><Plus size={16} /></button></div>
+        <div className="flex items-center justify-between px-1 pb-3"><div><p className="text-xs font-semibold text-[#72766b]">我的笔记</p><p className="mt-1 text-[11px] text-[#a0a297]">{noteTotal} 篇笔记</p></div><div className="flex items-center gap-1.5"><button onClick={() => fileRef.current?.click()} title="导入 Markdown / TXT" aria-label="导入 Markdown / TXT" className="grid size-7 place-items-center rounded-lg border border-[#e5e6df] text-[#777d70] hover:bg-white"><Upload size={14} /></button><button onClick={createNote} title="新建笔记" aria-label="新建笔记" className="grid size-7 place-items-center rounded-lg bg-[#30352a] text-white hover:bg-[#41473a]"><Plus size={15} /></button></div></div>
         <label className="flex items-center gap-2 rounded-lg border border-[#e8e9e2] bg-white px-2.5 py-2 text-[#92958b]"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索笔记" className="w-full bg-transparent text-xs text-[#3f433a] outline-none placeholder:text-[#b2b4aa]" /></label>
         <div className="mt-3 flex-1 space-y-1 overflow-y-auto">
           {loading ? <div className="px-2 py-5 text-xs text-[#96988f]">正在加载…</div> : notes.length === 0 ? <div className="px-2 py-7 text-center"><FileText size={20} className="mx-auto text-[#bdc0b4]" /><p className="mt-2 text-xs text-[#92958b]">还没有笔记</p><p className="mt-1 text-[11px] text-[#b0b2a8]">新建或导入 Markdown / TXT</p></div> : notes.map((item) => <button key={item.id} onClick={() => void openNote(item.id)} className={`w-full rounded-xl px-3 py-2.5 text-left transition ${note.id === item.id ? "bg-[#e9ece3]" : "hover:bg-[#f0f1eb]"}`}><div className="flex items-start gap-2.5"><FileText size={15} className={`mt-0.5 shrink-0 ${note.id === item.id ? "text-[#68785e]" : "text-[#a4a79d]"}`} /><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[#42463d]">{item.title || "未命名笔记"}</p><p className="mt-1 truncate text-[11px] text-[#9b9e93]">{item.content.slice(0, 70).replace(/\n/g, " ") || "空白笔记"}</p></div></div></button>)}
         </div>
-        <button onClick={() => fileRef.current?.click()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#d7d9d0] px-3 py-2.5 text-xs text-[#75796e] hover:border-[#aeb5a5] hover:bg-white"><Upload size={14} />导入 Markdown / TXT</button>
+        {noteTotal > 0 && <div className="mt-3 flex items-center justify-between border-t border-[#e9eae4] pt-2.5"><span className="text-[10px] text-[#92958b]">{notesPage} / {Math.max(1, Math.ceil(noteTotal / notesPageSize))}</span><div className="flex gap-1"><button disabled={notesPage <= 1 || loading} onClick={() => setNotesPage((page) => page - 1)} aria-label="上一页笔记" className="grid size-7 place-items-center rounded-lg border border-[#e5e6df] bg-white text-[#666c5d] hover:bg-[#f8f9f5] disabled:opacity-40"><ChevronLeft size={14} /></button><button disabled={notesPage >= Math.ceil(noteTotal / notesPageSize) || loading} onClick={() => setNotesPage((page) => page + 1)} aria-label="下一页笔记" className="grid size-7 place-items-center rounded-lg border border-[#e5e6df] bg-white text-[#666c5d] hover:bg-[#f8f9f5] disabled:opacity-40"><ChevronRight size={14} /></button></div></div>}
       </aside>
 
       <section className="flex min-h-[520px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e5e6df] bg-white shadow-[0_12px_36px_-32px_rgba(47,52,40,.35)] lg:min-h-0">
