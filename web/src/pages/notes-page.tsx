@@ -105,7 +105,7 @@ export function NotesPage() {
     setDraft(null)
     setAnnotationDraft(null)
     setAnnotationPopover(null)
-    setView("preview")
+    setView("edit")
   }
 
   const captureEditorSelection = () => {
