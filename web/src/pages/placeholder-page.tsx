@@ -2,7 +2,7 @@ import { ArrowRight, BookOpenText, ChartNoAxesColumnIncreasing, Settings2 } from
 import { Link } from "react-router"
 
 const pages = {
-  statistics: { title: "复习统计", eyebrow: "Insights", description: "查看复习趋势、记忆保持情况和每日完成量。", icon: ChartNoAxesColumnIncreasing },
+  statistics: { title: "统计", eyebrow: "Insights", description: "查看复习趋势、记忆保持情况和每日完成量。", icon: ChartNoAxesColumnIncreasing },
   settings: { title: "设置", eyebrow: "Preferences", description: "管理复习目标、FSRS 参数、数据备份与本地存储。", icon: Settings2 },
   "not-found": { title: "页面不存在", eyebrow: "Not found", description: "这个页面还没有创建，先回到笔记继续整理知识。", icon: BookOpenText },
 } as const

@@ -177,6 +177,30 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
+	type noteDaySummary struct {
+		Date  string `json:"date"`
+		Count int    `json:"count"`
+	}
+	noteDays := make([]noteDaySummary, 365)
+	noteDayIndexes := make(map[string]int, len(noteDays))
+	noteStart := today.AddDate(0, 0, -364)
+	for i := range noteDays {
+		date := noteStart.AddDate(0, 0, i).Format("2006-01-02")
+		noteDays[i] = noteDaySummary{Date: date}
+		noteDayIndexes[date] = i
+	}
+	var noteCreatedRows []struct {
+		CreatedAt time.Time
+	}
+	if err := s.db.Model(&model.Note{}).Select("created_at").Where("created_at >= ?", noteStart).Find(&noteCreatedRows).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	for _, row := range noteCreatedRows {
+		if index, ok := noteDayIndexes[row.CreatedAt.In(location).Format("2006-01-02")]; ok {
+			noteDays[index].Count++
+		}
+	}
 	var average float64
 	if totalReviews > 0 {
 		if err := s.db.Model(&model.ReviewLog{}).Select("AVG(rating)").Scan(&average).Error; err != nil {
@@ -235,7 +259,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average},
-		"days":    days, "ratings": ratings, "recent": recent,
+		"days":    days, "noteDays": noteDays, "ratings": ratings, "recent": recent,
 	})
 }
 

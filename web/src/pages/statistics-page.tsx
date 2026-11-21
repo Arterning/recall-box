@@ -7,12 +7,28 @@ import { api, toErrorMessage } from "@/lib/api"
 type Overview = {
   summary: { notes: number; cards: number; due: number; totalReviews: number; reviewedToday: number; reviewsLast30Days: number; averageRating: number }
   days: { date: string; count: number; good: number }[]
+  noteDays: { date: string; count: number }[]
   ratings: Record<string, number>
   recent: { id: number; cardId: number; rating: number; response: string; reviewedAt: string; question: string; excerpt: string; noteTitle: string }[]
 }
 
 const ratingLabels: Record<string, string> = { "1": "忘了", "2": "困难", "3": "记得", "4": "简单" }
 const ratingStyles: Record<string, string> = { "1": "bg-[#d58d78]", "2": "bg-[#d0b978]", "3": "bg-[#91a57f]", "4": "bg-[#6f9b88]" }
+
+function buildNoteHeatmap(noteDays: { date: string; count: number }[]) {
+  const counts = new Map(noteDays.map((day) => [day.date.slice(0, 10), day.count]))
+  const firstDate = noteDays[0]?.date.slice(0, 10)
+  if (!firstDate) return []
+  const first = new Date(`${firstDate}T12:00:00`)
+  if (Number.isNaN(first.getTime())) return []
+  first.setDate(first.getDate() - first.getDay())
+  return Array.from({ length: 53 }, (_, week) => Array.from({ length: 7 }, (_, weekday) => {
+    const date = new Date(first)
+    date.setDate(first.getDate() + week * 7 + weekday)
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+    return { date: key, count: counts.get(key) || 0 }
+  }))
+}
 
 export function StatisticsPage() {
   const [data, setData] = useState<Overview | null>(null)
@@ -22,19 +38,24 @@ export function StatisticsPage() {
   useEffect(() => {
     api<Overview>("/api/reviews/overview")
       .then(setData)
-      .catch((cause: unknown) => setError(toErrorMessage(cause, "加载复习统计失败")))
+      .catch((cause: unknown) => setError(toErrorMessage(cause, "加载统计失败")))
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="flex min-h-80 items-center justify-center gap-2 text-sm text-[#8e9287]"><LoaderCircle size={17} className="animate-spin" />正在整理复习统计…</div>
+  if (loading) return <div className="flex min-h-80 items-center justify-center gap-2 text-sm text-[#8e9287]"><LoaderCircle size={17} className="animate-spin" />正在整理统计…</div>
   if (error || !data) return <div className="rounded-xl border border-[#efd5ce] bg-[#fff5f1] px-4 py-3 text-sm text-[#9b5748]">{error || "暂无统计数据"}</div>
 
   const summary = data.summary
   const maxReviews = Math.max(1, ...data.days.map((day) => day.count))
   const totalRatings = Object.values(data.ratings).reduce((total, count) => total + count, 0)
+  const noteDays = data.noteDays
+  const noteHeatmap = buildNoteHeatmap(noteDays)
+  const maxNotesInDay = Math.max(1, ...noteDays.map((day) => day.count))
+  const firstNoteDate = noteDays[0]?.date.slice(0, 10) || ""
+  const lastNoteDate = noteDays[noteDays.length - 1]?.date.slice(0, 10) || ""
 
   return <div className="mx-auto max-w-5xl">
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a957e]">Insights</p><h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#35392f]">复习统计</h1><p className="mt-1 text-sm text-[#898d82]">观察复习节奏、记忆难度和最近的回答。</p></div><Link to="/review/history" className="rounded-xl border border-[#e5e6df] bg-white px-3.5 py-2.5 text-xs text-[#666c5d] hover:bg-[#f8f9f5]">查看全部提交历史</Link></div>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a957e]">Insights</p><h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#35392f]">统计</h1><p className="mt-1 text-sm text-[#898d82]">观察复习节奏、记忆难度和最近的回答。</p></div><Link to="/review/history" className="rounded-xl border border-[#e5e6df] bg-white px-3.5 py-2.5 text-xs text-[#666c5d] hover:bg-[#f8f9f5]">查看全部提交历史</Link></div>
 
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Metric icon={<Sparkles size={16} />} label="今日复习" value={summary.reviewedToday} hint={`${summary.due} 张卡片待复习`} />
@@ -42,6 +63,8 @@ export function StatisticsPage() {
       <Metric icon={<BarChart3 size={16} />} label="累计复习" value={summary.totalReviews} hint={`${summary.cards} 张卡片 · ${summary.notes} 篇笔记`} />
       <Metric icon={<Clock3 size={16} />} label="平均自评" value={summary.totalReviews ? `${summary.averageRating.toFixed(1)} / 4` : "—"} hint="1 忘了 · 4 简单" />
     </div>
+
+    <section className="mt-4 rounded-2xl border border-[#e5e6df] bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-sm font-semibold text-[#45493f]">笔记创建记录</h2><p className="mt-1 text-[11px] text-[#999c91]">过去一年每天新建的笔记数量</p></div><span className="text-[10px] text-[#999c91]">共 {summary.notes} 篇笔记</span></div><div className="mt-4 overflow-x-auto pb-2"><div className="min-w-[760px]"><div className="mb-2 flex gap-1 pl-7 text-[9px] text-[#a0a297]"><span className="w-[calc((100%-52px)/12)]">{noteDays[0]?.date.slice(0, 4)}</span><span className="w-[calc((100%-52px)/12)]">{noteDays[90]?.date.slice(0, 7)}</span><span className="w-[calc((100%-52px)/12)]">{noteDays[180]?.date.slice(0, 7)}</span><span className="w-[calc((100%-52px)/12)]">{noteDays[270]?.date.slice(0, 7)}</span><span>{noteDays[noteDays.length - 1]?.date.slice(0, 7)}</span></div><div className="flex gap-1"><div className="grid shrink-0 grid-rows-7 gap-1 pr-1 text-[8px] leading-3 text-[#a0a297]"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div><div className="flex gap-1">{noteHeatmap.map((week, weekIndex) => <div key={weekIndex} className="grid grid-rows-7 gap-1">{week.map((day) => { const inRange = day.date >= firstNoteDate && day.date <= lastNoteDate; const level = !day.count ? 0 : day.count >= maxNotesInDay ? 4 : Math.ceil(day.count / maxNotesInDay * 4); const colors = ["bg-[#f0f1ec]", "bg-[#dce5d3]", "bg-[#c0d2b1]", "bg-[#9fb88a]", "bg-[#718b5c]"]; return <span key={day.date} title={inRange ? `${day.date}：${day.count} 篇笔记` : undefined} aria-label={inRange ? `${day.date}：${day.count} 篇笔记` : undefined} className={`size-[11px] rounded-[3px] ${inRange ? colors[level] : "bg-transparent"}`} /> })}</div>)}</div></div><div className="mt-3 flex items-center justify-end gap-1.5 text-[9px] text-[#999c91]"><span>少</span><span className="size-[11px] rounded-[3px] bg-[#f0f1ec]" /><span className="size-[11px] rounded-[3px] bg-[#dce5d3]" /><span className="size-[11px] rounded-[3px] bg-[#c0d2b1]" /><span className="size-[11px] rounded-[3px] bg-[#9fb88a]" /><span className="size-[11px] rounded-[3px] bg-[#718b5c]" /><span>多</span></div></div></div></section>
 
     <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,1fr)]">
       <section className="rounded-2xl border border-[#e5e6df] bg-white p-5"><div className="flex items-start justify-between"><div><h2 className="text-sm font-semibold text-[#45493f]">每日复习量</h2><p className="mt-1 text-[11px] text-[#999c91]">最近 30 天 · 柱状表示提交次数，深色部分为记得或简单</p></div><span className="rounded-lg bg-[#f1f3ed] p-2 text-[#7b896f]"><BarChart3 size={16} /></span></div><div className="mt-6 flex h-40 items-end gap-[3px] sm:gap-1.5">{data.days.map((day, index) => { const height = day.count ? Math.max(8, day.count / maxReviews * 100) : 2; const goodHeight = day.count ? day.good / day.count * height : 0; return <div key={day.date} className="group relative flex h-full min-w-0 flex-1 items-end"><div title={`${day.date}：${day.count} 次`} className="relative w-full overflow-hidden rounded-t-[4px] bg-[#e6eadf] transition-colors group-hover:bg-[#dce3d3]" style={{ height: `${height}%`, minHeight: day.count ? 8 : 2 }}><div className="absolute inset-x-0 bottom-0 rounded-t-[4px] bg-[#8fa17d]" style={{ height: `${day.count ? goodHeight / height * 100 : 0}%` }} /></div>{index % 7 === 0 && <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] text-[#a0a297]">{day.date.slice(5)}</span>}</div> })}</div><div className="mt-8 flex items-center justify-between text-[10px] text-[#9b9e93]"><span>无复习记录的日期也会显示</span><span>{data.days.reduce((n, day) => n + day.count, 0)} 次提交</span></div></section>

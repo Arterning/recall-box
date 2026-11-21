@@ -18,7 +18,7 @@ const navigation = [
   { to: "/review", label: "今日复习", icon: Brain, badge: true },
   { to: "/cards", label: "卡片库", icon: Layers3 },
   { to: "/diary", label: "日记", icon: NotebookPen },
-  { to: "/statistics", label: "复习统计", icon: ChartNoAxesColumnIncreasing },
+  { to: "/statistics", label: "统计", icon: ChartNoAxesColumnIncreasing },
   { to: "/settings", label: "设置", icon: Settings2 },
 ]
 
