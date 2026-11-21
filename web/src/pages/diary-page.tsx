@@ -12,6 +12,10 @@ function currentMonth(date: string) {
   return date.slice(0, 7)
 }
 
+function normalizeDateKey(value: string) {
+  return value?.slice(0, 10) ?? ""
+}
+
 function displayDate(value: string, options: Intl.DateTimeFormatOptions = { month: "long", day: "numeric", weekday: "long" }) {
   // SQLite drivers may serialize a DATE column as either YYYY-MM-DD or a
   // timestamp. Normalize it before formatting so legacy rows cannot crash
@@ -56,7 +60,8 @@ export function DiaryPage() {
   const loadEntries = useCallback(async (monthKey: string) => {
     setLoadingEntries(true)
     try {
-      setEntries(await api<DiarySummary[]>(`/api/diaries?month=${monthKey}`))
+      const result = await api<DiarySummary[]>(`/api/diaries?month=${monthKey}`)
+      setEntries(result.map((item) => ({ ...item, date: normalizeDateKey(item.date) })))
     } catch (cause) {
       setError(toErrorMessage(cause, "加载日记列表失败"))
     } finally {
