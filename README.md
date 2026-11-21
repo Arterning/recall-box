@@ -5,6 +5,25 @@ Data is stored in the current user's config directory
 (`%AppData%/RecallBox/recall-box.db` on Windows). Set `RECALL_BOX_DATA_DIR` to
 use another directory.
 
+## Learning model
+
+Recall Box uses a two-step approach to remembering:
+
+1. **Mark and recall lightly.** Highlight a passage in a note and optionally
+   add a comment. The marked text is hidden by default in preview, so the user
+   can try to recall it from its surrounding context. Hovering over the mark
+   reveals the text; the top-level control can show or hide all marked text.
+   Clicking a mark opens its comment, which can be edited. This lightweight
+   recall does not create a review log or change an FSRS schedule.
+2. **Create a review card when recall is difficult.** Turn a marked passage into
+   a card when it proves hard to remember. The default question is a cloze
+   version of the surrounding paragraph, with the selected passage removed;
+   the selected passage becomes the reference answer. FSRS then schedules
+   reviews from the user's ratings and records submitted answers in history.
+
+This keeps ordinary note reading and quick self-checks low-friction, while
+reserving scheduled spaced repetition for knowledge that needs more practice.
+
 ## Development
 
 ```powershell
