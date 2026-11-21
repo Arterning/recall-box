@@ -44,7 +44,9 @@ type Card struct {
 
 type Annotation struct {
 	ID          uint           `json:"id" gorm:"primaryKey"`
-	NoteID      uint           `json:"noteId" gorm:"not null;index"`
+	NoteID      *uint          `json:"noteId,omitempty" gorm:"index"`
+	CardID      *uint          `json:"cardId,omitempty" gorm:"index"`
+	Field       string         `json:"field,omitempty" gorm:"size:20;not null;default:''"`
 	Excerpt     string         `json:"excerpt" gorm:"type:text;not null"`
 	SourceText  string         `json:"-" gorm:"type:text;not null;default:''"`
 	StartOffset int            `json:"startOffset" gorm:"not null;default:0"`

@@ -24,7 +24,9 @@ export type Card = {
 
 export type Annotation = {
   id: number
-  noteId: number
+  noteId?: number
+  cardId?: number
+  field?: "question" | "answer" | "context"
   excerpt: string
   startOffset: number
   endOffset: number

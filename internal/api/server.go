@@ -43,6 +43,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/cards", s.createStandaloneCard)
 	s.mux.HandleFunc("GET /api/notes/{id}/annotations", s.listAnnotations)
 	s.mux.HandleFunc("POST /api/notes/{id}/annotations", s.createAnnotation)
+	s.mux.HandleFunc("GET /api/cards/{id}/annotations", s.listCardAnnotations)
+	s.mux.HandleFunc("POST /api/cards/{id}/annotations", s.createCardAnnotation)
 	s.mux.HandleFunc("DELETE /api/annotations/{id}", s.deleteAnnotation)
 	s.mux.HandleFunc("GET /api/cards", s.listAllCards)
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
@@ -168,6 +170,10 @@ func (s *Server) deleteNote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		cardIDs := tx.Model(&model.Card{}).Select("id").Where("note_id = ?", note.ID)
+		if err := tx.Where("card_id IN (?)", cardIDs).Delete(&model.Annotation{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("note_id = ?", note.ID).Delete(&model.Card{}).Error; err != nil {
 			return err
 		}
@@ -318,6 +324,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updates := map[string]any{}
+	contentByField := map[string]string{}
 	if input.Question != nil {
 		question := strings.TrimSpace(*input.Question)
 		if question == "" {
@@ -325,6 +332,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updates["question"] = question
+		contentByField["question"] = question
 	}
 	if input.Answer != nil {
 		answer := strings.TrimSpace(*input.Answer)
@@ -333,6 +341,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		updates["answer"] = answer
+		contentByField["answer"] = answer
 	}
 	if input.Context != nil {
 		contextText := strings.TrimSpace(*input.Context)
@@ -341,9 +350,31 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 		} else {
 			updates["context_override"] = contextText
 		}
+		contentByField["context"] = contextText
 	}
 	if len(updates) > 0 {
-		if err := s.db.Model(&card).Updates(updates).Error; err != nil {
+		if err := s.db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&card).Updates(updates).Error; err != nil {
+				return err
+			}
+			for field, content := range contentByField {
+				var annotations []model.Annotation
+				if err := tx.Where("card_id = ? AND field = ?", card.ID, field).Find(&annotations).Error; err != nil {
+					return err
+				}
+				for _, annotation := range annotations {
+					anchor := annotation.SourceText
+					if anchor == "" {
+						anchor = annotation.Excerpt
+					}
+					start, end, found := findAnchor(content, anchor, annotation.StartOffset)
+					if err := tx.Model(&annotation).Updates(map[string]any{"start_offset": start, "end_offset": end, "anchor_valid": found}).Error; err != nil {
+						return err
+					}
+				}
+			}
+			return nil
+		}); err != nil {
 			writeError(w, 500, err)
 			return
 		}
@@ -458,7 +489,73 @@ func (s *Server) createAnnotation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, errors.New("source text does not match the note"))
 		return
 	}
-	annotation := model.Annotation{NoteID: note.ID, Excerpt: input.Excerpt, SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, Comment: strings.TrimSpace(input.Comment), AnchorValid: true}
+	annotation := model.Annotation{NoteID: &note.ID, Excerpt: input.Excerpt, SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, Comment: strings.TrimSpace(input.Comment), AnchorValid: true}
+	if err := s.db.Create(&annotation).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 201, annotation)
+}
+
+func (s *Server) listCardAnnotations(w http.ResponseWriter, r *http.Request) {
+	var card model.Card
+	if err := s.db.First(&card, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	var annotations []model.Annotation
+	if err := s.db.Where("card_id = ?", card.ID).Order("created_at desc").Find(&annotations).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, annotations)
+}
+
+func (s *Server) createCardAnnotation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Field       string `json:"field"`
+		Excerpt     string `json:"excerpt"`
+		SourceText  string `json:"sourceText"`
+		StartOffset int    `json:"startOffset"`
+		EndOffset   int    `json:"endOffset"`
+		Comment     string `json:"comment"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	input.Field = strings.TrimSpace(input.Field)
+	if input.Field != "question" && input.Field != "answer" && input.Field != "context" {
+		writeError(w, 400, errors.New("field must be question, answer, or context"))
+		return
+	}
+	if strings.TrimSpace(input.Excerpt) == "" || input.StartOffset < 0 || input.EndOffset <= input.StartOffset {
+		writeError(w, 400, errors.New("selected text and valid offsets are required"))
+		return
+	}
+	if input.SourceText == "" {
+		input.SourceText = input.Excerpt
+	}
+	if len(utf16.Encode([]rune(input.SourceText))) != input.EndOffset-input.StartOffset {
+		writeError(w, 400, errors.New("source text and offsets do not match"))
+		return
+	}
+	var card model.Card
+	if err := s.db.Preload("Note").First(&card, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	content := card.Question
+	switch input.Field {
+	case "answer":
+		content = card.Answer
+	case "context":
+		content = resolveCardContext(card, card.Note.Content)
+	}
+	if sliceUTF16(content, input.StartOffset, input.EndOffset) != input.SourceText {
+		writeError(w, 400, errors.New("source text does not match card content"))
+		return
+	}
+	annotation := model.Annotation{CardID: &card.ID, Field: input.Field, Excerpt: input.Excerpt, SourceText: input.SourceText, StartOffset: input.StartOffset, EndOffset: input.EndOffset, Comment: strings.TrimSpace(input.Comment), AnchorValid: true}
 	if err := s.db.Create(&annotation).Error; err != nil {
 		writeError(w, 500, err)
 		return
@@ -801,13 +898,18 @@ func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteCard(w http.ResponseWriter, r *http.Request) {
-	result := s.db.Delete(&model.Card{}, r.PathValue("id"))
-	if result.Error != nil {
-		writeError(w, 500, result.Error)
+	var card model.Card
+	if err := s.db.First(&card, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
 		return
 	}
-	if result.RowsAffected == 0 {
-		writeError(w, 404, errors.New("card not found"))
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("card_id = ?", card.ID).Delete(&model.Annotation{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&card).Error
+	}); err != nil {
+		writeError(w, 500, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
