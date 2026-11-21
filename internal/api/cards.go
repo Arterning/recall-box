@@ -130,7 +130,7 @@ func (s *Server) createStandaloneCard(w http.ResponseWriter, r *http.Request) {
 		NoteTitle  string `json:"noteTitle"`
 		NoteFormat string `json:"noteFormat"`
 	}
-	writeJSON(w, 201, cardItem{Card: card, NoteTitle: "鐙珛鍗＄墖", NoteFormat: "markdown"})
+	writeJSON(w, 201, cardItem{Card: card, NoteTitle: "独立卡片", NoteFormat: "markdown"})
 }
 
 func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
@@ -211,7 +211,7 @@ func (s *Server) updateCard(w http.ResponseWriter, r *http.Request) {
 	card.Excerpt = resolveCardContext(card, card.Note.Content)
 	noteTitle, noteFormat := card.Note.Title, card.Note.Format
 	if card.NoteID == nil {
-		noteTitle, noteFormat = "鐙珛鍗＄墖", "markdown"
+		noteTitle, noteFormat = "独立卡片", "markdown"
 	}
 	type cardItem struct {
 		model.Card
@@ -291,7 +291,7 @@ func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
 		card.Excerpt = resolveCardContext(card, card.Note.Content)
 		noteTitle, noteFormat := card.Note.Title, card.Note.Format
 		if card.NoteID == nil {
-			noteTitle, noteFormat = "鐙珛鍗＄墖", "markdown"
+			noteTitle, noteFormat = "独立卡片", "markdown"
 		}
 		result = append(result, dueCard{Card: card, NoteTitle: noteTitle, NoteFormat: noteFormat})
 	}

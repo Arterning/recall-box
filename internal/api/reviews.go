@@ -119,7 +119,7 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		} else if history[i].NoteID != nil {
 			history[i].Excerpt = clozeExcerpt(history[i].NoteText, history[i].StartOffset, history[i].EndOffset)
 		} else {
-			history[i].NoteTitle = "鐙珛鍗＄墖"
+			history[i].NoteTitle = "独立卡片"
 		}
 	}
 	writeJSON(w, 200, history)
@@ -272,7 +272,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		} else if recent[i].NoteID != nil {
 			recent[i].Excerpt = clozeExcerpt(recent[i].NoteText, recent[i].StartOffset, recent[i].EndOffset)
 		} else {
-			recent[i].NoteTitle = "鐙珛鍗＄墖"
+			recent[i].NoteTitle = "独立卡片"
 		}
 	}
 	writeJSON(w, 200, map[string]any{
