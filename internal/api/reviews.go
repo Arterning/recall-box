@@ -152,6 +152,15 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	location := now.Location()
+	year := now.Year()
+	if rawYear := r.URL.Query().Get("year"); rawYear != "" {
+		parsedYear, err := strconv.Atoi(rawYear)
+		if err != nil || parsedYear < 1970 || parsedYear > now.Year() {
+			writeError(w, http.StatusBadRequest, errors.New("year must be between 1970 and the current year"))
+			return
+		}
+		year = parsedYear
+	}
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, location)
 	firstDay := today.AddDate(0, 0, -29)
 	var totalReviews int64
@@ -181,18 +190,19 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		Date  string `json:"date"`
 		Count int    `json:"count"`
 	}
-	noteDays := make([]noteDaySummary, 365)
+	yearStart := time.Date(year, time.January, 1, 0, 0, 0, 0, location)
+	yearEnd := yearStart.AddDate(1, 0, 0)
+	noteDays := make([]noteDaySummary, time.Date(year, time.December, 31, 0, 0, 0, 0, location).YearDay())
 	noteDayIndexes := make(map[string]int, len(noteDays))
-	noteStart := today.AddDate(0, 0, -364)
 	for i := range noteDays {
-		date := noteStart.AddDate(0, 0, i).Format("2006-01-02")
+		date := yearStart.AddDate(0, 0, i).Format("2006-01-02")
 		noteDays[i] = noteDaySummary{Date: date}
 		noteDayIndexes[date] = i
 	}
 	var noteCreatedRows []struct {
 		CreatedAt time.Time
 	}
-	if err := s.db.Model(&model.Note{}).Select("created_at").Where("created_at >= ?", noteStart).Find(&noteCreatedRows).Error; err != nil {
+	if err := s.db.Model(&model.Note{}).Select("created_at").Where("created_at >= ? AND created_at < ?", yearStart, yearEnd).Find(&noteCreatedRows).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
@@ -200,6 +210,14 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		if index, ok := noteDayIndexes[row.CreatedAt.In(location).Format("2006-01-02")]; ok {
 			noteDays[index].Count++
 		}
+	}
+	var availableYears []int
+	if err := s.db.Model(&model.Note{}).Distinct("CAST(strftime('%Y', created_at) AS INTEGER)").Order("CAST(strftime('%Y', created_at) AS INTEGER) DESC").Pluck("CAST(strftime('%Y', created_at) AS INTEGER)", &availableYears).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if len(availableYears) == 0 || availableYears[0] != now.Year() {
+		availableYears = append([]int{now.Year()}, availableYears...)
 	}
 	var average float64
 	if totalReviews > 0 {
@@ -259,7 +277,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average},
-		"days":    days, "noteDays": noteDays, "ratings": ratings, "recent": recent,
+		"days":    days, "noteDays": noteDays, "noteYear": year, "noteYears": availableYears, "ratings": ratings, "recent": recent,
 	})
 }
 
