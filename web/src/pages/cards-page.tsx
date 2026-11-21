@@ -20,6 +20,7 @@ export function CardsPage() {
   const [page, setPage] = useState(1)
   const pageSize = 30
   const [search, setSearch] = useState("")
+  const [sort, setSort] = useState<"due" | "created_desc">("due")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [deleting, setDeleting] = useState<number | null>(null)
@@ -43,6 +44,7 @@ export function CardsPage() {
       if (query.trim()) params.set("q", query.trim())
       params.set("page", String(currentPage))
       params.set("pageSize", String(pageSize))
+      params.set("sort", sort)
       const result = await api<CardListResult>(`/api/cards?${params}`)
       setCards(result.items)
       setTotalCards(result.total)
@@ -52,7 +54,7 @@ export function CardsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [sort])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(search, page), 180)
@@ -156,6 +158,7 @@ export function CardsPage() {
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <label className="flex min-w-64 flex-1 items-center gap-2 rounded-xl border border-[#e5e6df] bg-white px-3.5 py-2.5 text-[#898d82] focus-within:border-[#bdc9b3]"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索问题、答案、上下文或笔记" className="w-full bg-transparent text-sm text-[#45493f] outline-none placeholder:text-[#aaaca2]" /></label>
+        <label className="flex items-center gap-2 rounded-xl border border-[#e5e6df] bg-white px-3 py-2.5 text-xs text-[#7e8377]">排序<select value={sort} onChange={(event) => { setSort(event.target.value as "due" | "created_desc"); setPage(1) }} className="bg-transparent text-xs text-[#555b4e] outline-none"><option value="due">复习时间：从早到晚</option><option value="created_desc">创建时间：从新到旧</option></select></label>
         <div className="flex items-center gap-4 rounded-xl border border-[#e5e6df] bg-white px-4 py-2.5 text-xs text-[#7e8377]"><span className="flex items-center gap-1.5"><Layers3 size={14} />{totalCards} 张卡片</span><span className="flex items-center gap-1.5"><Clock3 size={14} />{dueCount} 张待复习</span></div>
       </div>
 

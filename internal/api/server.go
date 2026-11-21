@@ -387,6 +387,7 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 	if pageSize > 100 {
 		pageSize = 100
 	}
+	sortBy := r.URL.Query().Get("sort")
 	var cards []model.Card
 	query := s.db.Model(&model.Card{}).Joins("LEFT JOIN notes ON notes.id = cards.note_id AND notes.deleted_at IS NULL").Preload("Note")
 	if search := strings.TrimSpace(r.URL.Query().Get("q")); search != "" {
@@ -402,7 +403,13 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
-	if err := query.Order("cards.due_at asc").Order("cards.id asc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&cards).Error; err != nil {
+	switch sortBy {
+	case "created_desc":
+		query = query.Order("cards.created_at desc").Order("cards.id desc")
+	default:
+		query = query.Order("cards.due_at asc").Order("cards.id asc")
+	}
+	if err := query.Offset((page - 1) * pageSize).Limit(pageSize).Find(&cards).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
