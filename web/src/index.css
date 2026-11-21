@@ -207,6 +207,18 @@
   text-underline-offset: 3px;
 }
 .markdown-preview .annotation-clickable { cursor: pointer; }
+.markdown-preview .annotation-hidden {
+  color: transparent !important;
+  background: #dce4d5;
+  text-decoration-color: transparent;
+  text-shadow: none;
+  transition: color 100ms ease, background-color 100ms ease;
+}
+.markdown-preview .annotation-hidden:hover {
+  color: inherit !important;
+  background: #f8f0cf;
+  text-decoration-color: #c4ac5f;
+}
 
 /* The app uses a warm, hand-picked light palette. Keep it intact and remap
    those utility colors only when the user explicitly enables dark mode. */
@@ -244,3 +256,5 @@ html.dark .markdown-preview th { border-color: #383d34; }
 html.dark .markdown-preview hr { border-color: #383d34; }
 html.dark .markdown-preview a { color: #a9c393; }
 html.dark .markdown-preview .annotation-mark { background: #51492d; }
+html.dark .markdown-preview .annotation-hidden { color: transparent !important; background: #46503f; }
+html.dark .markdown-preview .annotation-hidden:hover { color: inherit !important; background: #51492d; }

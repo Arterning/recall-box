@@ -56,12 +56,14 @@ export function MarkdownNote({
   annotations,
   onSelect,
   onAnnotationClick,
+  hideAnnotations = false,
 }: {
   content: string
   cards: Card[]
   annotations: Annotation[]
   onSelect: (selection: PreviewSelection | null) => void
   onAnnotationClick?: (annotationId: number, rect: DOMRect) => void
+  hideAnnotations?: boolean
 }) {
   const ranges: SourceRange[] = [
     ...cards.filter((item) => item.anchorValid).map((item) => ({ start: item.startOffset, end: item.endOffset, kind: "card" as const })),
@@ -105,7 +107,7 @@ export function MarkdownNote({
           const annotationId = sourceProperty(node, "dataAnnotationId")
           const title = sourceProperty(node, "title")
           const clickable = annotation && typeof annotationId === "number" && onAnnotationClick
-          return <mark {...props} title={clickable ? undefined : typeof title === "string" ? title : undefined} className={annotation ? `annotation-mark${clickable ? " annotation-clickable" : ""}` : "card-mark"} data-source-start={sourceProperty(node, "dataSourceStart")} data-source-end={sourceProperty(node, "dataSourceEnd")} onClick={(event) => { if (clickable && typeof annotationId === "number") { event.stopPropagation(); onAnnotationClick?.(annotationId, event.currentTarget.getBoundingClientRect()) } }} />
+          return <mark {...props} title={clickable ? undefined : typeof title === "string" ? title : undefined} className={annotation ? `annotation-mark${clickable ? " annotation-clickable" : ""}${hideAnnotations ? " annotation-hidden" : ""}` : "card-mark"} data-source-start={sourceProperty(node, "dataSourceStart")} data-source-end={sourceProperty(node, "dataSourceEnd")} onClick={(event) => { if (clickable && typeof annotationId === "number") { event.stopPropagation(); onAnnotationClick?.(annotationId, event.currentTarget.getBoundingClientRect()) } }} />
         },
       }}
     >{content || "*还没有内容*"}</ReactMarkdown>
