@@ -18,6 +18,27 @@ type MarkdownNode = {
   data?: { hName?: string; hProperties?: Record<string, unknown> }
 }
 
+export type MarkdownHeading = { level: number; title: string; id: string }
+
+export function markdownOutline(content: string): MarkdownHeading[] {
+  const headings: MarkdownHeading[] = []
+  let fence = ""
+  for (const line of content.split(/\r?\n/)) {
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/)
+    if (fenceMatch) {
+      if (!fence) fence = fenceMatch[1][0]
+      else if (fenceMatch[1][0] === fence) fence = ""
+      continue
+    }
+    if (fence) continue
+    const match = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/)
+    if (!match) continue
+    const title = match[2].replace(/\s+#+\s*$/, "").trim()
+    if (title) headings.push({ level: match[1].length, title, id: `markdown-heading-${headings.length}` })
+  }
+  return headings
+}
+
 export type PreviewSelection = {
   start: number
   end: number
@@ -93,8 +114,22 @@ export function MarkdownNote({
 
 function sourceMarkPlugin(ranges: SourceRange[]) {
   return () => (root: MarkdownNode) => {
+    assignHeadingIDs(root)
     visit(root, ranges)
   }
+}
+
+function assignHeadingIDs(node: MarkdownNode) {
+  let index = 0
+  const walk = (current: MarkdownNode) => {
+    if (current.type === "heading") {
+      current.data ??= {}
+      current.data.hProperties ??= {}
+      current.data.hProperties.id = `markdown-heading-${index++}`
+    }
+    current.children?.forEach(walk)
+  }
+  walk(node)
 }
 
 function visit(node: MarkdownNode, ranges: SourceRange[]) {

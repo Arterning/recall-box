@@ -23,7 +23,7 @@ export function CardsPage() {
   const [page, setPage] = useState(1)
   const pageSize = 30
   const [search, setSearch] = useState("")
-  const [sort, setSort] = useState<"due" | "created_desc">("due")
+  const [sort, setSort] = useState<"due" | "created_desc">(() => localStorage.getItem("cards-sort") === "created_desc" ? "created_desc" : "due")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [deleting, setDeleting] = useState<number | null>(null)
@@ -73,6 +73,7 @@ export function CardsPage() {
   }, [load, search, page])
 
   useEffect(() => { setPage(1) }, [search])
+  useEffect(() => { localStorage.setItem("cards-sort", sort) }, [sort])
 
   const openCard = async (card: Card) => {
     setViewCard(card)
