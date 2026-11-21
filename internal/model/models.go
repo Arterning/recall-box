@@ -19,6 +19,15 @@ type Note struct {
 	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
+// DiaryEntry stores one Markdown learning journal entry per local calendar day.
+type DiaryEntry struct {
+	ID        uint      `json:"id" gorm:"primaryKey"`
+	EntryDate string    `json:"date" gorm:"type:date;not null;uniqueIndex"`
+	Content   string    `json:"content" gorm:"type:text;not null;default:''"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // Card represents a highlighted passage in a note. Offsets use UTF-16 code
 // units, matching textarea.selectionStart/selectionEnd in browser editors.
 type Card struct {

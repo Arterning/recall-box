@@ -7,6 +7,7 @@ import { ReviewPage } from "@/pages/review-page"
 import { ReviewHistoryPage } from "@/pages/review-history-page"
 import { StatisticsPage } from "@/pages/statistics-page"
 import { SettingsPage } from "@/pages/settings-page"
+import { DiaryPage } from "@/pages/diary-page"
 
 export function App() {
   return (
@@ -18,6 +19,7 @@ export function App() {
           <Route path="review" element={<ReviewPage />} />
           <Route path="review/history" element={<ReviewHistoryPage />} />
           <Route path="cards" element={<CardsPage />} />
+          <Route path="diary" element={<DiaryPage />} />
           <Route path="statistics" element={<StatisticsPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<PlaceholderPage page="not-found" />} />

@@ -19,7 +19,7 @@ func Open(databasePath string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
-	if err := db.AutoMigrate(&model.Note{}, &model.Card{}, &model.Annotation{}, &model.ReviewLog{}, &model.AppSetting{}); err != nil {
+	if err := db.AutoMigrate(&model.Note{}, &model.DiaryEntry{}, &model.Card{}, &model.Annotation{}, &model.ReviewLog{}, &model.AppSetting{}); err != nil {
 		return nil, fmt.Errorf("auto migrate database: %w", err)
 	}
 	if err := db.FirstOrCreate(&model.AppSetting{Key: "desiredRetention", Value: "0.9"}, model.AppSetting{Key: "desiredRetention"}).Error; err != nil {

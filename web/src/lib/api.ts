@@ -7,6 +7,8 @@ export type Note = {
   updatedAt: string
 }
 export type NoteListResult = { items: Note[]; total: number; page: number; pageSize: number }
+export type DiaryEntry = { id: number; date: string; content: string; createdAt: string; updatedAt: string }
+export type DiarySummary = { id: number; date: string; excerpt: string; updatedAt: string }
 
 export type Card = {
   id: number

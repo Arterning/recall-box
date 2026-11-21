@@ -4,6 +4,7 @@ import {
   Layers3,
   Settings2,
   Brain,
+  NotebookPen,
   Moon,
   Sun,
 } from "lucide-react"
@@ -16,6 +17,7 @@ const navigation = [
   { to: "/notes", label: "笔记", icon: BookOpenText },
   { to: "/review", label: "今日复习", icon: Brain, badge: true },
   { to: "/cards", label: "卡片库", icon: Layers3 },
+  { to: "/diary", label: "日记", icon: NotebookPen },
   { to: "/statistics", label: "复习统计", icon: ChartNoAxesColumnIncreasing },
   { to: "/settings", label: "设置", icon: Settings2 },
 ]
