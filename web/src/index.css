@@ -206,6 +206,7 @@
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
+.markdown-preview .annotation-clickable { cursor: pointer; }
 
 /* The app uses a warm, hand-picked light palette. Keep it intact and remap
    those utility colors only when the user explicitly enables dark mode. */

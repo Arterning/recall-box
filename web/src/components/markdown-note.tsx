@@ -6,6 +6,7 @@ type SourceRange = {
   start: number
   end: number
   kind: "card" | "annotation"
+  annotationId?: number
   comment?: string
 }
 
@@ -31,15 +32,17 @@ export function MarkdownNote({
   cards,
   annotations,
   onSelect,
+  onAnnotationClick,
 }: {
   content: string
   cards: Card[]
   annotations: Annotation[]
   onSelect: (selection: PreviewSelection | null) => void
+  onAnnotationClick?: (annotationId: number, rect: DOMRect) => void
 }) {
   const ranges: SourceRange[] = [
     ...cards.filter((item) => item.anchorValid).map((item) => ({ start: item.startOffset, end: item.endOffset, kind: "card" as const })),
-    ...annotations.filter((item) => item.anchorValid).map((item) => ({ start: item.startOffset, end: item.endOffset, kind: "annotation" as const, comment: item.comment })),
+    ...annotations.filter((item) => item.anchorValid).map((item) => ({ start: item.startOffset, end: item.endOffset, kind: "annotation" as const, annotationId: item.id, comment: item.comment })),
   ]
 
   const captureSelection = () => {
@@ -74,8 +77,10 @@ export function MarkdownNote({
         span: ({ node, ...props }) => <span {...props} data-source-start={sourceProperty(node, "dataSourceStart")} data-source-end={sourceProperty(node, "dataSourceEnd")} />,
         mark: ({ node, ...props }) => {
           const annotation = sourceProperty(node, "dataMarkKind") === "annotation"
+          const annotationId = sourceProperty(node, "dataAnnotationId")
           const title = sourceProperty(node, "title")
-          return <mark {...props} title={typeof title === "string" ? title : undefined} className={annotation ? "annotation-mark" : "card-mark"} data-source-start={sourceProperty(node, "dataSourceStart")} data-source-end={sourceProperty(node, "dataSourceEnd")} />
+          const clickable = annotation && typeof annotationId === "number" && onAnnotationClick
+          return <mark {...props} title={clickable ? undefined : typeof title === "string" ? title : undefined} className={annotation ? `annotation-mark${clickable ? " annotation-clickable" : ""}` : "card-mark"} data-source-start={sourceProperty(node, "dataSourceStart")} data-source-end={sourceProperty(node, "dataSourceEnd")} onClick={(event) => { if (clickable && typeof annotationId === "number") { event.stopPropagation(); onAnnotationClick?.(annotationId, event.currentTarget.getBoundingClientRect()) } }} />
         },
       }}
     >{content || "*还没有内容*"}</ReactMarkdown>
@@ -127,7 +132,7 @@ function splitTextNode(node: MarkdownNode, start: number, end: number, ranges: S
       hProperties: {
         dataSourceStart: partStart,
         dataSourceEnd: partEnd,
-        ...(mark ? { dataMarkKind: mark.kind, ...(mark.comment ? { title: mark.comment } : {}) } : {}),
+        ...(mark ? { dataMarkKind: mark.kind, ...(mark.annotationId ? { dataAnnotationId: mark.annotationId } : {}), ...(mark.comment ? { title: mark.comment } : {}) } : {}),
       },
     }
     output.push({ type: "text", value: part, position: { start: { offset: partStart }, end: { offset: partEnd } }, data })

@@ -46,6 +46,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/cards/{id}/annotations", s.listCardAnnotations)
 	s.mux.HandleFunc("POST /api/cards/{id}/annotations", s.createCardAnnotation)
 	s.mux.HandleFunc("DELETE /api/annotations/{id}", s.deleteAnnotation)
+	s.mux.HandleFunc("PUT /api/annotations/{id}", s.updateAnnotation)
 	s.mux.HandleFunc("GET /api/cards", s.listAllCards)
 	s.mux.HandleFunc("GET /api/cards/due", s.dueCards)
 	s.mux.HandleFunc("PUT /api/cards/{id}", s.updateCard)
@@ -574,6 +575,26 @@ func (s *Server) deleteAnnotation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) updateAnnotation(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Comment string `json:"comment"`
+	}
+	if !decode(w, r, &input) {
+		return
+	}
+	var annotation model.Annotation
+	if err := s.db.First(&annotation, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	if err := s.db.Model(&annotation).Update("comment", strings.TrimSpace(input.Comment)).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	s.db.First(&annotation, annotation.ID)
+	writeJSON(w, 200, annotation)
 }
 
 func (s *Server) dueCards(w http.ResponseWriter, r *http.Request) {
