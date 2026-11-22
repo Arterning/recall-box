@@ -18,9 +18,9 @@ import { useTheme } from "@/components/theme-provider"
 
 const navigation = [
   { to: "/notes", label: "笔记", icon: BookOpenText },
-  { to: "/review", label: "问题卡片", icon: Brain, badge: "cards" },
   { to: "/notes/review", label: "复习笔记", icon: BookOpenText, badge: "notes" },
   { to: "/cards", label: "卡片库", icon: Layers3 },
+  { to: "/review", label: "复习卡片", icon: Brain, badge: "cards" },
   { to: "/diary", label: "日记", icon: NotebookPen },
   { to: "/statistics", label: "统计", icon: ChartNoAxesColumnIncreasing },
   { to: "/settings", label: "设置", icon: Settings2 },
