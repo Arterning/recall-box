@@ -402,6 +402,36 @@ export function NotesPage() {
 
   const baseline = notes.find((item) => item.id === note.id)
   const dirty = !note.id || baseline?.content !== note.content || baseline?.title !== note.title || baseline?.tags !== note.tags
+  const currentNoteIndex = notes.findIndex((item) => item.id === note.id)
+
+  const navigateNote = async (direction: -1 | 1) => {
+    if (!note.id || saving || currentNoteIndex < 0) return
+    if (dirty && !window.confirm("当前笔记有未保存的修改，切换笔记会放弃这些修改。继续吗？")) return
+    setError("")
+    const nextIndex = currentNoteIndex + direction
+    if (nextIndex >= 0 && nextIndex < notes.length) {
+      await openNote(notes[nextIndex].id)
+      return
+    }
+    const nextPage = notesPage + direction
+    const pageCount = Math.max(1, Math.ceil(noteTotal / notesPageSize))
+    if (nextPage < 1 || nextPage > pageCount) return
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({ page: String(nextPage), pageSize: String(notesPageSize) })
+      if (query.trim()) params.set("q", query.trim())
+      const result = await api<NoteListResult>(`/api/notes?${params}`)
+      setNotes(result.items)
+      setNoteTotal(result.total)
+      setNotesPage(nextPage)
+      const nextNote = direction > 0 ? result.items[0] : result.items[result.items.length - 1]
+      if (nextNote) await openNote(nextNote.id)
+    } catch (cause) {
+      setError(toErrorMessage(cause, "切换笔记失败"))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const enrollNoteForReview = async () => {
     if (saving) return
@@ -458,6 +488,10 @@ export function NotesPage() {
               <div className="min-w-0 flex-1">
                 <input value={note.title} onChange={(event) => setNote({ ...note, title: event.target.value })} placeholder="给笔记起个名字" className="w-full bg-transparent text-lg font-semibold tracking-tight text-[#34382f] outline-none placeholder:text-[#b2b4aa]" />
                 <p className="mt-0.5 text-[10px] text-[#a4a69d]">{note.id ? `上次修改 ${formatDate(note.updatedAt)}` : "新笔记 · 尚未保存"}</p>
+              </div>
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                <button onClick={() => void navigateNote(-1)} disabled={!note.id || currentNoteIndex < 0 || currentNoteIndex <= 0 && notesPage <= 1 || saving || loading} aria-label="上一篇笔记" title="上一篇笔记" className="grid size-8 place-items-center rounded-lg border border-[#e5e6df] text-[#74796d] hover:bg-[#f8f9f5] disabled:cursor-default disabled:opacity-35"><ChevronLeft size={15} /></button>
+                <button onClick={() => void navigateNote(1)} disabled={!note.id || currentNoteIndex < 0 || currentNoteIndex >= notes.length - 1 && notesPage >= Math.ceil(noteTotal / notesPageSize) || saving || loading} aria-label="下一篇笔记" title="下一篇笔记" className="grid size-8 place-items-center rounded-lg border border-[#e5e6df] text-[#74796d] hover:bg-[#f8f9f5] disabled:cursor-default disabled:opacity-35"><ChevronRight size={15} /></button>
               </div>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 px-5 pb-3">
