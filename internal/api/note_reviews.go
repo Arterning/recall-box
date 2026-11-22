@@ -20,7 +20,15 @@ func (s *Server) enrollNoteReview(w http.ResponseWriter, r *http.Request) {
 	}
 	if !note.ReviewEnabled {
 		now := time.Now()
-		state, err := json.Marshal(fsrs.NewCard(now))
+		state := fsrs.NewCard(now)
+		if note.FSRSState != "" {
+			if err := json.Unmarshal([]byte(note.FSRSState), &state); err != nil {
+				writeError(w, http.StatusInternalServerError, errors.New("could not read note scheduling state"))
+				return
+			}
+		}
+		state.Due = now
+		stateJSON, err := json.Marshal(state)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -28,11 +36,31 @@ func (s *Server) enrollNoteReview(w http.ResponseWriter, r *http.Request) {
 		if err := s.db.Model(&note).Updates(map[string]any{
 			"review_enabled": true,
 			"review_due_at":  now,
-			"fsrs_state":     string(state),
+			"fsrs_state":     string(stateJSON),
 		}).Error; err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+	}
+	if err := s.db.First(&note, note.ID).Error; err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, note)
+}
+
+func (s *Server) unenrollNoteReview(w http.ResponseWriter, r *http.Request) {
+	var note model.Note
+	if err := s.db.First(&note, r.PathValue("id")).Error; err != nil {
+		notFoundOrError(w, err)
+		return
+	}
+	if err := s.db.Model(&note).Updates(map[string]any{
+		"review_enabled": false,
+		"review_due_at":  nil,
+	}).Error; err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
 	}
 	if err := s.db.First(&note, note.ID).Error; err != nil {
 		writeError(w, http.StatusInternalServerError, err)

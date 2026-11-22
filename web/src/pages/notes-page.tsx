@@ -389,9 +389,24 @@ export function NotesPage() {
         ? saved
         : await api<Note>(`/api/notes/${saved.id}/review/enroll`, { method: "POST" })
       setNote(enrolled)
+      await loadNotes(query, notesPage)
       setToast("笔记已加入复习队列")
     } catch (cause) {
       setError(toErrorMessage(cause, "无法加入笔记复习"))
+    }
+  }
+
+  const unenrollNoteFromReview = async () => {
+    if (!note.id || saving) return
+    if (!window.confirm("将这篇笔记移出复习队列？之后可以随时重新加入。")) return
+    setError("")
+    try {
+      const updated = await api<Note>(`/api/notes/${note.id}/review/enroll`, { method: "DELETE" })
+      setNote(updated)
+      setNotes((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setToast("笔记已移出复习队列，可随时重新加入")
+    } catch (cause) {
+      setError(toErrorMessage(cause, "移出复习队列失败"))
     }
   }
 
@@ -425,7 +440,7 @@ export function NotesPage() {
                 <button onClick={() => setShowOutline((value) => !value)} title={showOutline ? "隐藏大纲" : "显示大纲"} aria-label={showOutline ? "隐藏大纲" : "显示大纲"} className={`grid size-8 place-items-center rounded-lg border transition ${showOutline ? "border-[#dce4d5] bg-[#f1f4ed] text-[#607451]" : "border-[#e5e6df] text-[#74796d] hover:bg-[#f8f9f5]"}`}><ListTree size={15} /></button>
               </div>
               <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                {note.id > 0 && (note.reviewEnabled ? <span title={note.reviewDueAt ? `下次复习 ${formatDate(note.reviewDueAt)}` : "已加入笔记复习队列"} className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f1f4ed] px-2.5 py-2 text-[10px] font-medium text-[#607451]"><Brain size={13} />已加入复习</span> : <button onClick={() => void enrollNoteForReview()} disabled={saving} title="加入 FSRS 笔记复习队列" className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f7f9f4] px-2.5 py-2 text-[10px] font-medium text-[#607451] hover:bg-[#edf1e8] disabled:opacity-50"><Brain size={13} />加入复习</button>)}
+                {note.id > 0 && (note.reviewEnabled ? <div className="flex items-center gap-1"><span title={note.reviewDueAt ? `下次复习 ${formatDate(note.reviewDueAt)}` : "已加入笔记复习队列"} className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f1f4ed] px-2.5 py-2 text-[10px] font-medium text-[#607451]"><Brain size={13} />已加入复习</span><button onClick={() => void unenrollNoteFromReview()} disabled={saving} title="移出复习队列" aria-label="移出复习队列" className="grid size-8 place-items-center rounded-lg border border-[#e5e6df] text-[#85897d] hover:bg-[#f8f9f5] disabled:opacity-50"><X size={13} /></button></div> : <button onClick={() => void enrollNoteForReview()} disabled={saving} title="加入 FSRS 笔记复习队列" className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f7f9f4] px-2.5 py-2 text-[10px] font-medium text-[#607451] hover:bg-[#edf1e8] disabled:opacity-50"><Brain size={13} />加入复习</button>)}
                 {note.id > 0 && <button onClick={() => void removeNote()} className="flex items-center gap-1.5 rounded-lg border border-[#f0dcd6] px-3 py-2 text-xs font-medium text-[#a75e4e] hover:bg-[#fff5f1]"><Trash2 size={13} />删除</button>}
                 <button onClick={() => void persistNote().catch((cause: unknown) => setError(toErrorMessage(cause, "保存失败")))} disabled={saving || !dirty} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#41473a] disabled:cursor-default disabled:bg-[#eef0e9] disabled:text-[#8d9185]">{saving ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}{saving ? "保存中" : dirty ? "保存" : "已保存"}</button>
               </div>

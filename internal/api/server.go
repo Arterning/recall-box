@@ -34,6 +34,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /api/notes/{id}", s.updateNote)
 	s.mux.HandleFunc("DELETE /api/notes/{id}", s.deleteNote)
 	s.mux.HandleFunc("POST /api/notes/{id}/review/enroll", s.enrollNoteReview)
+	s.mux.HandleFunc("DELETE /api/notes/{id}/review/enroll", s.unenrollNoteReview)
 	s.mux.HandleFunc("POST /api/notes/{id}/review", s.reviewNote)
 	s.mux.HandleFunc("GET /api/note-reviews/due", s.dueNotes)
 	s.mux.HandleFunc("GET /api/diaries", s.listDiaries)
