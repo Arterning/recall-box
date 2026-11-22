@@ -44,7 +44,7 @@ export function NotesPage() {
   const [toast, setToast] = useState("")
   const [imageUploading, setImageUploading] = useState(false)
   const [showOutline, setShowOutline] = useState(true)
-  const [hideAnnotations, setHideAnnotations] = useState(true)
+  const [hideAnnotations, setHideAnnotations] = useState(false)
   const [annotationPopover, setAnnotationPopover] = useState<{ item: Annotation; x: number; y: number } | null>(null)
   const [editingPopover, setEditingPopover] = useState(false)
   const [popoverComment, setPopoverComment] = useState("")
