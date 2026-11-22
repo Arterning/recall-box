@@ -46,13 +46,14 @@ type Card struct {
 	AnchorValid     bool   `json:"anchorValid" gorm:"not null;default:true"`
 	Question        string `json:"question" gorm:"type:text;not null;default:''"`
 	// Prompt remains for cards created before the question field was introduced.
-	Prompt    string         `json:"prompt" gorm:"type:text;not null;default:''"`
-	Answer    string         `json:"answer" gorm:"type:text;not null;default:''"`
-	DueAt     *time.Time     `json:"dueAt" gorm:"index"`
-	FSRSState string         `json:"fsrsState,omitempty" gorm:"type:text"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+	Prompt         string         `json:"prompt" gorm:"type:text;not null;default:''"`
+	Answer         string         `json:"answer" gorm:"type:text;not null;default:''"`
+	DueAt          *time.Time     `json:"dueAt" gorm:"index"`
+	ReviewPriority *int           `json:"reviewPriority,omitempty" gorm:"-"`
+	FSRSState      string         `json:"fsrsState,omitempty" gorm:"type:text"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+	DeletedAt      gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 type Annotation struct {

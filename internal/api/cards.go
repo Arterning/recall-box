@@ -265,9 +265,12 @@ func (s *Server) listAllCards(w http.ResponseWriter, r *http.Request) {
 		NoteFormat string `json:"noteFormat"`
 	}
 	result := make([]cardItem, 0, len(cards))
+	now := time.Now()
 	for _, card := range cards {
 		card = normalizeCard(card)
 		card.Excerpt = resolveCardContext(card, card.Note.Content)
+		priority := calculateReviewPriority(card.FSRSState, card.DueAt, now)
+		card.ReviewPriority = &priority
 		result = append(result, cardItem{Card: card, NoteTitle: card.Note.Title, NoteFormat: card.Note.Format})
 	}
 	writeJSON(w, 200, map[string]any{"items": result, "total": total, "dueCount": dueCount, "page": page, "pageSize": pageSize})

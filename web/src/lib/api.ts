@@ -23,6 +23,7 @@ export type Card = {
   question: string
   answer: string
   dueAt: string | null
+  reviewPriority?: number | null
   createdAt: string
   noteTitle?: string
   noteFormat?: "markdown" | "text"

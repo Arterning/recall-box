@@ -51,9 +51,13 @@ func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 // noteReviewPriority combines FSRS difficulty, review experience, and due date
 // into a 0-4 visual priority. It is derived for API responses, never persisted.
 func noteReviewPriority(note model.Note, now time.Time) int {
+	return calculateReviewPriority(note.FSRSState, note.ReviewDueAt, now)
+}
+
+func calculateReviewPriority(fsrsState string, dueAt *time.Time, now time.Time) int {
 	priority := 0
 	var state fsrs.Card
-	if note.FSRSState != "" && json.Unmarshal([]byte(note.FSRSState), &state) == nil {
+	if fsrsState != "" && json.Unmarshal([]byte(fsrsState), &state) == nil {
 		switch {
 		case state.Difficulty >= 8:
 			priority += 2
@@ -69,10 +73,10 @@ func noteReviewPriority(note model.Note, now time.Time) int {
 		// An enrolled note without readable FSRS state is treated as new.
 		priority += 2
 	}
-	if note.ReviewDueAt == nil || !note.ReviewDueAt.After(now) {
+	if dueAt == nil || !dueAt.After(now) {
 		overdueDays := 0
-		if note.ReviewDueAt != nil {
-			overdueDays = int(now.Sub(*note.ReviewDueAt).Hours() / 24)
+		if dueAt != nil {
+			overdueDays = int(now.Sub(*dueAt).Hours() / 24)
 		}
 		if overdueDays >= 7 {
 			priority += 2

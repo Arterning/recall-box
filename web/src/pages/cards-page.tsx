@@ -10,6 +10,8 @@ import { api, toErrorMessage, type Annotation, type Card, type CardListResult } 
 
 type CardSelection = PreviewSelection & { field: "question" | "answer" | "context" }
 
+const reviewPriorityBackgrounds = ["bg-[#f1f4ed]", "bg-[#ebf0e5]", "bg-[#e2ead9]", "bg-[#d6e3ca]", "bg-[#c8d9b8]"]
+
 function dueLabel(value: string | null) {
   if (!value) return "尚未安排"
   const due = new Date(value)
@@ -304,7 +306,8 @@ export function CardsPage() {
             {loading ? <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-[#8e9287]"><LoaderCircle size={16} className="animate-spin" />正在加载卡片…</div> : cards.length ? cards.map((card) => {
               const isDue = !card.dueAt || new Date(card.dueAt).getTime() <= Date.now()
               const active = viewCard?.id === card.id || selectedCard?.id === card.id
-              return <article key={card.id} onClick={() => { void openCard(card); setShowAnswer(false); setReviewed(false); setReviewRating(null) }} className={`group cursor-pointer rounded-xl border p-3 transition ${active ? "border-[#cbd4c1] bg-[#e9ece3]" : "border-[#e5e6df] bg-white hover:border-[#cbd4c1] hover:bg-[#fcfcfa]"}`}>
+              const priority = Math.max(0, Math.min(4, card.reviewPriority ?? 0))
+              return <article key={card.id} onClick={() => { void openCard(card); setShowAnswer(false); setReviewed(false); setReviewRating(null) }} className={`group cursor-pointer rounded-xl border p-3 transition ${active ? "border-[#82936e] ring-1 ring-inset ring-[#82936e]" : "border-[#e5e6df] hover:border-[#cbd4c1]"} ${reviewPriorityBackgrounds[priority]} hover:brightness-[0.98]`}>
                 <div className="flex items-start justify-between gap-2"><p className="min-w-0 truncate text-[10px] text-[#8b907f]">{card.noteTitle || "独立卡片"}</p></div>
                 <p className="mt-1.5 line-clamp-2 text-sm font-medium leading-5 text-[#35392f]">{card.question || card.answer || card.excerpt}</p>
                 <p className={`mt-2 text-[10px] ${isDue ? "text-[#a66550]" : "text-[#85897d]"}`}>{dueLabel(card.dueAt)}</p>
