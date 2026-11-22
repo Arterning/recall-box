@@ -8,20 +8,7 @@ type Selection = PreviewSelection
 type CardDraft = { question: string; answer: string }
 
 
-const reviewUrgencyColors = ["bg-[#dbe7d2]", "bg-[#c6d8b8]", "bg-[#a9c18f]", "bg-[#8ba66c]", "bg-[#647f4c]"]
-
-function noteReviewUrgency(note: Note) {
-  if (!note.reviewEnabled) return null
-  if (!note.reviewDueAt) return 3
-  const dueAt = new Date(note.reviewDueAt)
-  if (Number.isNaN(dueAt.getTime())) return 1
-  const overdueDays = Math.floor((Date.now() - dueAt.getTime()) / 86_400_000)
-  if (overdueDays < 0) return 0
-  if (overdueDays >= 7) return 4
-  if (overdueDays >= 3) return 3
-  if (overdueDays >= 1) return 2
-  return 1
-}
+const reviewPriorityBackgrounds = ["bg-[#f1f4ed]", "bg-[#ebf0e5]", "bg-[#e2ead9]", "bg-[#d6e3ca]", "bg-[#c8d9b8]"]
 
 function noteReviewHint(note: Note) {
   if (!note.reviewEnabled) return undefined
@@ -415,7 +402,7 @@ export function NotesPage() {
         <div className="flex items-center justify-between px-1 pb-3"><div><p className="text-xs font-semibold text-[#72766b]">我的笔记</p><p className="mt-1 text-[11px] text-[#a0a297]">{noteTotal} 篇笔记</p></div><div className="flex items-center gap-1.5"><button onClick={() => fileRef.current?.click()} title="导入 Markdown / TXT" aria-label="导入 Markdown / TXT" className="grid size-7 place-items-center rounded-lg border border-[#e5e6df] text-[#777d70] hover:bg-white"><Upload size={14} /></button><button onClick={createNote} title="新建笔记" aria-label="新建笔记" className="grid size-7 place-items-center rounded-lg bg-[#30352a] text-white hover:bg-[#41473a]"><Plus size={15} /></button></div></div>
         <label className="flex items-center gap-2 rounded-lg border border-[#e8e9e2] bg-white px-2.5 py-2 text-[#92958b]"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索笔记" className="w-full bg-transparent text-xs text-[#3f433a] outline-none placeholder:text-[#b2b4aa]" /></label>
         <div className="mt-3 flex-1 space-y-1 overflow-y-auto">
-          {loading ? <div className="px-2 py-5 text-xs text-[#96988f]">正在加载…</div> : notes.length === 0 ? <div className="px-2 py-7 text-center"><FileText size={20} className="mx-auto text-[#bdc0b4]" /><p className="mt-2 text-xs text-[#92958b]">还没有笔记</p><p className="mt-1 text-[11px] text-[#b0b2a8]">新建或导入 Markdown / TXT</p></div> : notes.map((item) => { const urgency = noteReviewUrgency(item); return <button key={item.id} onClick={() => void openNote(item.id)} title={noteReviewHint(item)} className={`relative w-full rounded-xl px-3 py-2.5 text-left transition ${note.id === item.id ? "bg-[#e9ece3]" : "hover:bg-[#f0f1eb]"}`}>{urgency !== null && <span aria-hidden="true" className={`absolute bottom-2 left-1.5 top-2 w-1 rounded-full ${reviewUrgencyColors[urgency]}`} />}<div className="flex items-start gap-2.5"><FileText size={15} className={`mt-0.5 shrink-0 ${note.id === item.id ? "text-[#68785e]" : "text-[#a4a79d]"}`} /><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[#42463d]">{item.title || "未命名笔记"}</p><p className="mt-1 truncate text-[11px] text-[#9b9e93]">{item.content.slice(0, 70).replace(/\n/g, " ") || "空白笔记"}</p></div></div></button>})}
+          {loading ? <div className="px-2 py-5 text-xs text-[#96988f]">正在加载…</div> : notes.length === 0 ? <div className="px-2 py-7 text-center"><FileText size={20} className="mx-auto text-[#bdc0b4]" /><p className="mt-2 text-xs text-[#92958b]">还没有笔记</p><p className="mt-1 text-[11px] text-[#b0b2a8]">新建或导入 Markdown / TXT</p></div> : notes.map((item) => { const priority = item.reviewEnabled ? Math.max(0, Math.min(4, item.reviewPriority ?? 0)) : null; const selected = note.id === item.id; const priorityClass = priority === null ? "" : reviewPriorityBackgrounds[priority]; return <button key={item.id} onClick={() => void openNote(item.id)} title={noteReviewHint(item)} className={`w-full rounded-xl px-3 py-2.5 text-left transition ${priorityClass || (selected ? "bg-[#e9ece3]" : "hover:bg-[#f0f1eb]")} ${priorityClass && selected ? "ring-1 ring-inset ring-[#82936e]" : ""} ${priorityClass ? "hover:brightness-[0.98]" : ""}`}><div className="flex items-start gap-2.5"><FileText size={15} className={`mt-0.5 shrink-0 ${selected ? "text-[#68785e]" : "text-[#a4a79d]"}`} /><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium text-[#42463d]">{item.title || "未命名笔记"}</p><p className="mt-1 truncate text-[11px] text-[#9b9e93]">{item.content.slice(0, 70).replace(/\n/g, " ") || "空白笔记"}</p></div></div></button>})}
         </div>
         {noteTotal > 0 && <div className="mt-3 flex items-center justify-between border-t border-[#e9eae4] pt-2.5"><span className="text-[10px] text-[#92958b]">{notesPage} / {Math.max(1, Math.ceil(noteTotal / notesPageSize))}</span><div className="flex gap-1"><button disabled={notesPage <= 1 || loading} onClick={() => setNotesPage((page) => page - 1)} aria-label="上一页笔记" className="grid size-7 place-items-center rounded-lg border border-[#e5e6df] bg-white text-[#666c5d] hover:bg-[#f8f9f5] disabled:opacity-40"><ChevronLeft size={14} /></button><button disabled={notesPage >= Math.ceil(noteTotal / notesPageSize) || loading} onClick={() => setNotesPage((page) => page + 1)} aria-label="下一页笔记" className="grid size-7 place-items-center rounded-lg border border-[#e5e6df] bg-white text-[#666c5d] hover:bg-[#f8f9f5] disabled:opacity-40"><ChevronRight size={14} /></button></div></div>}
       </aside>

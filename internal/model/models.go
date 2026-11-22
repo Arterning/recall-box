@@ -9,17 +9,18 @@ import (
 // Note stores the original editable text. Markdown and plain text are both
 // kept as-is; rendering and editing are responsibilities of the frontend.
 type Note struct {
-	ID            uint           `json:"id" gorm:"primaryKey"`
-	Title         string         `json:"title" gorm:"size:300;not null;default:''"`
-	Content       string         `json:"content" gorm:"type:text;not null;default:''"`
-	Format        string         `json:"format" gorm:"size:20;not null;default:markdown"`
-	Tags          string         `json:"tags" gorm:"type:text;not null;default:''"`
-	ReviewEnabled bool           `json:"reviewEnabled" gorm:"not null;default:false;index"`
-	ReviewDueAt   *time.Time     `json:"reviewDueAt" gorm:"index"`
-	FSRSState     string         `json:"-" gorm:"type:text"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	UpdatedAt     time.Time      `json:"updatedAt"`
-	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
+	ID             uint           `json:"id" gorm:"primaryKey"`
+	Title          string         `json:"title" gorm:"size:300;not null;default:''"`
+	Content        string         `json:"content" gorm:"type:text;not null;default:''"`
+	Format         string         `json:"format" gorm:"size:20;not null;default:markdown"`
+	Tags           string         `json:"tags" gorm:"type:text;not null;default:''"`
+	ReviewEnabled  bool           `json:"reviewEnabled" gorm:"not null;default:false;index"`
+	ReviewDueAt    *time.Time     `json:"reviewDueAt" gorm:"index"`
+	ReviewPriority *int           `json:"reviewPriority,omitempty" gorm:"-"`
+	FSRSState      string         `json:"-" gorm:"type:text"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+	DeletedAt      gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // DiaryEntry stores one Markdown learning journal entry per local calendar day.

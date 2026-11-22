@@ -7,6 +7,7 @@ export type Note = {
   updatedAt: string
   reviewEnabled: boolean
   reviewDueAt: string | null
+  reviewPriority?: number | null
 }
 export type NoteListResult = { items: Note[]; total: number; page: number; pageSize: number }
 export type DiaryEntry = { id: number; date: string; content: string; createdAt: string; updatedAt: string }

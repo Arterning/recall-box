@@ -1,11 +1,15 @@
 package api
 
 import (
+	"encoding/json"
 	"gorm.io/gorm"
 	"net/http"
 	"recall-box/internal/model"
 	"strconv"
 	"strings"
+	"time"
+
+	fsrs "github.com/open-spaced-repetition/go-fsrs/v4"
 )
 
 func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +39,51 @@ func (s *Server) listNotes(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	for i := range notes {
+		if notes[i].ReviewEnabled {
+			priority := noteReviewPriority(notes[i], time.Now())
+			notes[i].ReviewPriority = &priority
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": notes, "total": total, "page": page, "pageSize": pageSize})
+}
+
+// noteReviewPriority combines FSRS difficulty, review experience, and due date
+// into a 0-4 visual priority. It is derived for API responses, never persisted.
+func noteReviewPriority(note model.Note, now time.Time) int {
+	priority := 0
+	var state fsrs.Card
+	if note.FSRSState != "" && json.Unmarshal([]byte(note.FSRSState), &state) == nil {
+		switch {
+		case state.Difficulty >= 8:
+			priority += 2
+		case state.Difficulty >= 6:
+			priority++
+		}
+		if state.Reps < 2 {
+			priority += 2
+		} else if state.Reps < 5 {
+			priority++
+		}
+	} else {
+		// An enrolled note without readable FSRS state is treated as new.
+		priority += 2
+	}
+	if note.ReviewDueAt == nil || !note.ReviewDueAt.After(now) {
+		overdueDays := 0
+		if note.ReviewDueAt != nil {
+			overdueDays = int(now.Sub(*note.ReviewDueAt).Hours() / 24)
+		}
+		if overdueDays >= 7 {
+			priority += 2
+		} else if overdueDays >= 3 {
+			priority++
+		}
+	}
+	if priority > 4 {
+		return 4
+	}
+	return priority
 }
 
 func (s *Server) createNote(w http.ResponseWriter, r *http.Request) {
