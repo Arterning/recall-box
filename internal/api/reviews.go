@@ -83,6 +83,17 @@ func (s *Server) reviewCard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
 	type historyItem struct {
 		ID              uint      `json:"id"`
 		CardID          uint      `json:"cardId"`
@@ -98,14 +109,18 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 		StartOffset     int       `json:"-"`
 		EndOffset       int       `json:"-"`
 	}
-	var history []historyItem
-	err := s.db.Table("review_logs").
+	query := s.db.Table("review_logs").
 		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.context_override, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
 		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
-		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
-		Order("review_logs.reviewed_at desc").
-		Limit(500).
-		Scan(&history).Error
+		Joins("LEFT JOIN notes ON notes.id = cards.note_id")
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	var history []historyItem
+	err := query.Order("review_logs.reviewed_at desc").
+		Offset((page - 1) * pageSize).Limit(pageSize).Scan(&history).Error
 	if err != nil {
 		writeError(w, 500, err)
 		return
@@ -122,7 +137,7 @@ func (s *Server) reviewHistory(w http.ResponseWriter, r *http.Request) {
 			history[i].NoteTitle = "独立卡片"
 		}
 	}
-	writeJSON(w, 200, history)
+	writeJSON(w, 200, map[string]any{"items": history, "total": total, "page": page, "pageSize": pageSize})
 }
 
 func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
@@ -134,21 +149,6 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	type ratingSummary struct {
 		Rating int `json:"rating"`
 		Count  int `json:"count"`
-	}
-	type recentItem struct {
-		ID              uint      `json:"id"`
-		CardID          uint      `json:"cardId"`
-		Rating          int       `json:"rating"`
-		Response        string    `json:"response"`
-		ReviewedAt      time.Time `json:"reviewedAt"`
-		Question        string    `json:"question"`
-		Excerpt         string    `json:"excerpt"`
-		NoteTitle       string    `json:"noteTitle"`
-		NoteID          *uint     `json:"-"`
-		ContextOverride string    `json:"-"`
-		NoteText        string    `json:"-"`
-		StartOffset     int       `json:"-"`
-		EndOffset       int       `json:"-"`
 	}
 	now := time.Now()
 	location := now.Location()
@@ -266,27 +266,9 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 	for _, row := range ratingRows {
 		ratings[strconv.Itoa(row.Rating)] = int64(row.Count)
 	}
-	var recent []recentItem
-	if err := s.db.Table("review_logs").
-		Select("review_logs.id, review_logs.card_id, review_logs.rating, review_logs.response, review_logs.reviewed_at, cards.question, cards.excerpt, cards.note_id, cards.context_override, cards.start_offset, cards.end_offset, notes.content AS note_text, notes.title AS note_title").
-		Joins("LEFT JOIN cards ON cards.id = review_logs.card_id").
-		Joins("LEFT JOIN notes ON notes.id = cards.note_id").
-		Order("review_logs.reviewed_at desc").Limit(8).Scan(&recent).Error; err != nil {
-		writeError(w, 500, err)
-		return
-	}
-	for i := range recent {
-		if recent[i].ContextOverride != "" {
-			recent[i].Excerpt = recent[i].ContextOverride
-		} else if recent[i].NoteID != nil {
-			recent[i].Excerpt = clozeExcerpt(recent[i].NoteText, recent[i].StartOffset, recent[i].EndOffset)
-		} else {
-			recent[i].NoteTitle = "独立卡片"
-		}
-	}
 	writeJSON(w, 200, map[string]any{
 		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average, "noteReviewCount": noteReviewCount, "noteReviewsToday": noteReviewsToday},
-		"days":    days, "noteDays": noteDays, "noteYear": year, "noteYears": availableYears, "ratings": ratings, "recent": recent,
+		"days":    days, "noteDays": noteDays, "noteYear": year, "noteYears": availableYears, "ratings": ratings,
 	})
 }
 
