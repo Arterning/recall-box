@@ -40,7 +40,7 @@ export type Annotation = {
   createdAt: string
 }
 
-export type Stats = { notes: number; cards: number; due: number; reviewedToday: number }
+export type Stats = { notes: number; cards: number; due: number; noteDue: number; reviewedToday: number }
 export type CardListResult = { items: Card[]; total: number; dueCount: number; page: number; pageSize: number }
 
 export const emptyNote: Note = {

@@ -292,7 +292,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	var notes, cards, due, reviewed int64
+	var notes, cards, due, reviewed, noteDue int64
 	if err := s.db.Model(&model.Note{}).Count(&notes).Error; err != nil {
 		writeError(w, 500, err)
 		return
@@ -305,10 +305,14 @@ func (s *Server) reviewStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
+	if err := s.db.Model(&model.Note{}).Where("review_enabled = ? AND (review_due_at IS NULL OR review_due_at <= ?)", true, now).Count(&noteDue).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
 	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	if err := s.db.Model(&model.ReviewLog{}).Where("reviewed_at >= ?", start).Count(&reviewed).Error; err != nil {
 		writeError(w, 500, err)
 		return
 	}
-	writeJSON(w, 200, map[string]int64{"notes": notes, "cards": cards, "due": due, "reviewedToday": reviewed})
+	writeJSON(w, 200, map[string]int64{"notes": notes, "cards": cards, "due": due, "noteDue": noteDue, "reviewedToday": reviewed})
 }

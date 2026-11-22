@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent 
 import { BookOpen, Brain, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FilePlus2, FileText, Highlighter, ListTree, LoaderCircle, MessageSquareText, PencilLine, Plus, Search, Trash2, Upload, X } from "lucide-react"
 import { api, emptyNote, toErrorMessage, type Annotation, type Card, type Note, type NoteListResult } from "@/lib/api"
 import { MarkdownNote, markdownOutline, type PreviewSelection } from "@/components/markdown-note"
-import { useNavigate, useSearchParams } from "react-router"
+import { useSearchParams } from "react-router"
 
 type Selection = PreviewSelection
 type CardDraft = { question: string; answer: string }
 
 export function NotesPage() {
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [notes, setNotes] = useState<Note[]>([])
   const [noteTotal, setNoteTotal] = useState(0)
@@ -364,7 +363,7 @@ export function NotesPage() {
   const baseline = notes.find((item) => item.id === note.id)
   const dirty = !note.id || baseline?.content !== note.content || baseline?.title !== note.title || baseline?.tags !== note.tags
 
-  const startNoteReview = async () => {
+  const enrollNoteForReview = async () => {
     if (saving) return
     setError("")
     if (!note.content.trim()) {
@@ -377,7 +376,7 @@ export function NotesPage() {
         ? saved
         : await api<Note>(`/api/notes/${saved.id}/review/enroll`, { method: "POST" })
       setNote(enrolled)
-      navigate(`/notes/review?noteId=${enrolled.id}`)
+      setToast("笔记已加入复习队列")
     } catch (cause) {
       setError(toErrorMessage(cause, "无法加入笔记复习"))
     }
@@ -413,7 +412,7 @@ export function NotesPage() {
                 <button onClick={() => setShowOutline((value) => !value)} title={showOutline ? "隐藏大纲" : "显示大纲"} aria-label={showOutline ? "隐藏大纲" : "显示大纲"} className={`grid size-8 place-items-center rounded-lg border transition ${showOutline ? "border-[#dce4d5] bg-[#f1f4ed] text-[#607451]" : "border-[#e5e6df] text-[#74796d] hover:bg-[#f8f9f5]"}`}><ListTree size={15} /></button>
               </div>
               <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
-                {note.id > 0 && <button onClick={() => void startNoteReview()} disabled={saving} title={note.reviewEnabled && note.reviewDueAt ? `下次复习 ${formatDate(note.reviewDueAt)}` : "加入 FSRS 笔记复习"} className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f7f9f4] px-2.5 py-2 text-[10px] font-medium text-[#607451] hover:bg-[#edf1e8] disabled:opacity-50"><Brain size={13} />{note.reviewEnabled ? "复习笔记" : "加入复习"}</button>}
+                {note.id > 0 && (note.reviewEnabled ? <span title={note.reviewDueAt ? `下次复习 ${formatDate(note.reviewDueAt)}` : "已加入笔记复习队列"} className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f1f4ed] px-2.5 py-2 text-[10px] font-medium text-[#607451]"><Brain size={13} />已加入复习</span> : <button onClick={() => void enrollNoteForReview()} disabled={saving} title="加入 FSRS 笔记复习队列" className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f7f9f4] px-2.5 py-2 text-[10px] font-medium text-[#607451] hover:bg-[#edf1e8] disabled:opacity-50"><Brain size={13} />加入复习</button>)}
                 {note.id > 0 && <button onClick={() => void removeNote()} className="flex items-center gap-1.5 rounded-lg border border-[#f0dcd6] px-3 py-2 text-xs font-medium text-[#a75e4e] hover:bg-[#fff5f1]"><Trash2 size={13} />删除</button>}
                 <button onClick={() => void persistNote().catch((cause: unknown) => setError(toErrorMessage(cause, "保存失败")))} disabled={saving || !dirty} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#41473a] disabled:cursor-default disabled:bg-[#eef0e9] disabled:text-[#8d9185]">{saving ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}{saving ? "保存中" : dirty ? "保存" : "已保存"}</button>
               </div>

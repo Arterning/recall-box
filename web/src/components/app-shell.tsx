@@ -18,7 +18,8 @@ import { useTheme } from "@/components/theme-provider"
 
 const navigation = [
   { to: "/notes", label: "笔记", icon: BookOpenText },
-  { to: "/review", label: "今日复习", icon: Brain, badge: true },
+  { to: "/review", label: "问题卡片", icon: Brain, badge: "cards" },
+  { to: "/notes/review", label: "复习笔记", icon: BookOpenText, badge: "notes" },
   { to: "/cards", label: "卡片库", icon: Layers3 },
   { to: "/diary", label: "日记", icon: NotebookPen },
   { to: "/statistics", label: "统计", icon: ChartNoAxesColumnIncreasing },
@@ -27,16 +28,22 @@ const navigation = [
 
 export function AppShell() {
   const [due, setDue] = useState(0)
+  const [dueNotes, setDueNotes] = useState(0)
   const [dataDirectory, setDataDirectory] = useState<{ path: string; database: string; attachments: string } | null>(null)
   const [showDataDirectory, setShowDataDirectory] = useState(false)
   const [directoryMessage, setDirectoryMessage] = useState("")
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
-    api<Stats>("/api/reviews/stats").then((stats) => setDue(stats.due)).catch(() => setDue(0))
-    const timer = window.setInterval(() => {
-      api<Stats>("/api/reviews/stats").then((stats) => setDue(stats.due)).catch(() => setDue(0))
-    }, 60_000)
+    const refreshCounts = () => api<Stats>("/api/reviews/stats").then((stats) => {
+      setDue(stats.due)
+      setDueNotes(stats.noteDue)
+    }).catch(() => {
+      setDue(0)
+      setDueNotes(0)
+    })
+    void refreshCounts()
+    const timer = window.setInterval(() => void refreshCounts(), 60_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -91,10 +98,10 @@ export function AppShell() {
             <p className="hidden px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.13em] text-[#a4a69c] lg:block">工作区</p>
             {navigation.map((item) => {
               const Icon = item.icon
-              return <NavLink key={item.to} to={item.to} className={({ isActive }) => `flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] transition ${isActive ? "bg-[#e7ebe1] font-medium text-[#46513e]" : "text-[#74796d] hover:bg-white/70 hover:text-[#3f4439]"}`}>
+              return <NavLink key={item.to} to={item.to} end={item.to === "/notes"} className={({ isActive }) => `flex shrink-0 items-center gap-2.5 rounded-xl px-3 py-2.5 text-[13px] transition ${isActive ? "bg-[#e7ebe1] font-medium text-[#46513e]" : "text-[#74796d] hover:bg-white/70 hover:text-[#3f4439]"}`}>
                 <Icon size={16} />
                 <span>{item.label}</span>
-                {item.badge && due > 0 && <span className="ml-auto rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#667858]">{due}</span>}
+                {item.badge && (item.badge === "cards" ? due : dueNotes) > 0 && <span className="ml-auto rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold text-[#667858]">{item.badge === "cards" ? due : dueNotes}</span>}
               </NavLink>
             })}
           </aside>

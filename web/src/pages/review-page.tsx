@@ -15,7 +15,7 @@ const ratings = [
 export function ReviewPage() {
   const [dueCards, setDueCards] = useState<Card[]>([])
   const [index, setIndex] = useState(0)
-  const [stats, setStats] = useState<Stats>({ notes: 0, cards: 0, due: 0, reviewedToday: 0 })
+  const [stats, setStats] = useState<Stats>({ notes: 0, cards: 0, due: 0, noteDue: 0, reviewedToday: 0 })
   const [response, setResponse] = useState("")
   const [showReference, setShowReference] = useState(false)
   const [quickRating, setQuickRating] = useState<number | null>(null)
