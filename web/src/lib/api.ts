@@ -5,6 +5,8 @@ export type Note = {
   format: "markdown" | "text"
   tags: string
   updatedAt: string
+  reviewEnabled: boolean
+  reviewDueAt: string | null
 }
 export type NoteListResult = { items: Note[]; total: number; page: number; pageSize: number }
 export type DiaryEntry = { id: number; date: string; content: string; createdAt: string; updatedAt: string }
@@ -48,6 +50,8 @@ export const emptyNote: Note = {
   format: "markdown",
   tags: "",
   updatedAt: "",
+  reviewEnabled: false,
+  reviewDueAt: null,
 }
 
 export async function api<T>(url: string, init?: RequestInit): Promise<T> {

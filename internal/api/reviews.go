@@ -173,6 +173,15 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, err)
 		return
 	}
+	var noteReviewCount, noteReviewsToday int64
+	if err := s.db.Model(&model.NoteReviewLog{}).Count(&noteReviewCount).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	if err := s.db.Model(&model.NoteReviewLog{}).Where("reviewed_at >= ?", today).Count(&noteReviewsToday).Error; err != nil {
+		writeError(w, 500, err)
+		return
+	}
 	var notes, cards, due int64
 	if err := s.db.Model(&model.Note{}).Count(&notes).Error; err != nil {
 		writeError(w, 500, err)
@@ -276,7 +285,7 @@ func (s *Server) reviewOverview(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, map[string]any{
-		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average},
+		"summary": map[string]any{"notes": notes, "cards": cards, "due": due, "totalReviews": totalReviews, "reviewedToday": reviewedToday, "reviewsLast30Days": len(recentLogs), "averageRating": average, "noteReviewCount": noteReviewCount, "noteReviewsToday": noteReviewsToday},
 		"days":    days, "noteDays": noteDays, "noteYear": year, "noteYears": availableYears, "ratings": ratings, "recent": recent,
 	})
 }

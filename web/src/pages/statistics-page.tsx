@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react"
 import type { ReactNode } from "react"
-import { Activity, BarChart3, Clock3, LoaderCircle, Sparkles } from "lucide-react"
+import { Activity, BarChart3, BookOpenText, Clock3, LoaderCircle, Sparkles } from "lucide-react"
 import { Link } from "react-router"
 import { api, toErrorMessage } from "@/lib/api"
 
 type Overview = {
-  summary: { notes: number; cards: number; due: number; totalReviews: number; reviewedToday: number; reviewsLast30Days: number; averageRating: number }
+  summary: { notes: number; cards: number; due: number; totalReviews: number; reviewedToday: number; reviewsLast30Days: number; averageRating: number; noteReviewCount: number; noteReviewsToday: number }
   days: { date: string; count: number; good: number }[]
   noteDays: { date: string; count: number }[]
   noteYear: number
@@ -68,10 +68,11 @@ export function StatisticsPage() {
   return <div className="mx-auto max-w-5xl">
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a957e]">Insights</p><h1 className="mt-1 text-2xl font-semibold tracking-tight text-[#35392f]">统计</h1><p className="mt-1 text-sm text-[#898d82]">观察复习节奏、记忆难度和最近的回答。</p></div><Link to="/review/history" className="rounded-xl border border-[#e5e6df] bg-white px-3.5 py-2.5 text-xs text-[#666c5d] hover:bg-[#f8f9f5]">查看全部提交历史</Link></div>
 
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       <Metric icon={<Sparkles size={16} />} label="今日复习" value={summary.reviewedToday} hint={`${summary.due} 张卡片待复习`} />
       <Metric icon={<Activity size={16} />} label="近 30 天" value={summary.reviewsLast30Days} hint="次复习提交" />
       <Metric icon={<BarChart3 size={16} />} label="累计复习" value={summary.totalReviews} hint={`${summary.cards} 张卡片 · ${summary.notes} 篇笔记`} />
+      <Metric icon={<BookOpenText size={16} />} label="笔记回顾" value={summary.noteReviewCount} hint={`${summary.noteReviewsToday} 次今天`} />
       <Metric icon={<Clock3 size={16} />} label="平均自评" value={summary.totalReviews ? `${summary.averageRating.toFixed(1)} / 4` : "—"} hint="1 忘了 · 4 简单" />
     </div>
 

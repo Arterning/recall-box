@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react"
-import { BookOpen, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FilePlus2, FileText, Highlighter, ListTree, LoaderCircle, MessageSquareText, PencilLine, Plus, Search, Trash2, Upload, X } from "lucide-react"
+import { BookOpen, Brain, Check, ChevronLeft, ChevronRight, Eye, EyeOff, FilePlus2, FileText, Highlighter, ListTree, LoaderCircle, MessageSquareText, PencilLine, Plus, Search, Trash2, Upload, X } from "lucide-react"
 import { api, emptyNote, toErrorMessage, type Annotation, type Card, type Note, type NoteListResult } from "@/lib/api"
 import { MarkdownNote, markdownOutline, type PreviewSelection } from "@/components/markdown-note"
+import { useNavigate, useSearchParams } from "react-router"
 
 type Selection = PreviewSelection
 type CardDraft = { question: string; answer: string }
 
 export function NotesPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [notes, setNotes] = useState<Note[]>([])
   const [noteTotal, setNoteTotal] = useState(0)
   const [notesPage, setNotesPage] = useState(1)
@@ -113,6 +116,11 @@ export function NotesPage() {
       setError(toErrorMessage(cause, "无法打开笔记"))
     }
   }
+
+  useEffect(() => {
+    const requestedID = Number(searchParams.get("noteId"))
+    if (requestedID > 0) void openNote(requestedID)
+  }, [searchParams])
 
   const createNote = () => {
     setNote({ ...emptyNote, format: "markdown" })
@@ -356,6 +364,25 @@ export function NotesPage() {
   const baseline = notes.find((item) => item.id === note.id)
   const dirty = !note.id || baseline?.content !== note.content || baseline?.title !== note.title || baseline?.tags !== note.tags
 
+  const startNoteReview = async () => {
+    if (saving) return
+    setError("")
+    if (!note.content.trim()) {
+      setError("先为笔记添加一些内容，再加入复习。")
+      return
+    }
+    try {
+      const saved = dirty ? await persistNote() : note
+      const enrolled = saved.reviewEnabled
+        ? saved
+        : await api<Note>(`/api/notes/${saved.id}/review/enroll`, { method: "POST" })
+      setNote(enrolled)
+      navigate(`/notes/review?noteId=${enrolled.id}`)
+    } catch (cause) {
+      setError(toErrorMessage(cause, "无法加入笔记复习"))
+    }
+  }
+
   return (
     <div className={`grid min-h-[calc(100vh-8.5rem)] gap-4 lg:h-[calc(100vh-11rem)] lg:min-h-[520px] ${showOutline ? "lg:grid-cols-[230px_minmax(0,1fr)_240px]" : "lg:grid-cols-[230px_minmax(0,1fr)]"}`}>
       <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" className="hidden" onChange={(event) => void importFile(event.target.files?.[0])} />
@@ -373,7 +400,7 @@ export function NotesPage() {
         {editing || note.id || note.title || note.content ? <>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#eeefe9] px-5 py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#f0f2ec] text-[#7a8870]"><BookOpen size={17} /></div><div className="min-w-0 flex-1"><input value={note.title} onChange={(event) => setNote({ ...note, title: event.target.value })} placeholder="给笔记起个名字" className="w-full bg-transparent text-[15px] font-semibold tracking-tight text-[#34382f] outline-none placeholder:text-[#b2b4aa]" /><p className="mt-0.5 text-[10px] text-[#a4a69d]">{note.id ? `上次修改 ${formatDate(note.updatedAt)}` : "新笔记 · 尚未保存"}</p></div></div>
-            <div className="flex items-center gap-2"><div className="flex rounded-lg bg-[#f3f4ef] p-0.5"><button onClick={() => { setView("edit"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "edit" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><PencilLine size={12} />编辑</button><button onClick={() => { setView("preview"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "preview" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><Eye size={12} />预览</button></div><button onClick={() => setHideAnnotations((value) => !value)} title={hideAnnotations ? "显示批注原文" : "遮挡批注原文"} className="flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-2.5 py-2 text-[10px] text-[#74796d] hover:bg-[#f8f9f5]">{hideAnnotations ? <EyeOff size={13} /> : <Eye size={13} />}{hideAnnotations ? "批注遮挡" : "批注可见"}</button><button onClick={() => setShowOutline((value) => !value)} title={showOutline ? "隐藏大纲" : "显示大纲"} className="flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-2.5 py-2 text-[10px] text-[#74796d] hover:bg-[#f8f9f5]"><ListTree size={13} />{showOutline ? "隐藏大纲" : "显示大纲"}</button>{note.id > 0 && <button onClick={() => void removeNote()} className="flex items-center gap-1.5 rounded-lg border border-[#f0dcd6] px-3 py-2 text-xs font-medium text-[#a75e4e] hover:bg-[#fff5f1]"><Trash2 size={13} />删除</button>}<button onClick={() => void persistNote().catch((cause: unknown) => setError(toErrorMessage(cause, "保存失败")))} disabled={saving || !dirty} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#41473a] disabled:cursor-default disabled:bg-[#eef0e9] disabled:text-[#8d9185]">{saving ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}{saving ? "保存中" : dirty ? "保存" : "已保存"}</button></div>
+            <div className="flex items-center gap-2"><div className="flex rounded-lg bg-[#f3f4ef] p-0.5"><button onClick={() => { setView("edit"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "edit" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><PencilLine size={12} />编辑</button><button onClick={() => { setView("preview"); setSelection(null) }} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-medium ${view === "preview" ? "bg-white text-[#4d5547] shadow-sm" : "text-[#96988e]"}`}><Eye size={12} />预览</button></div><button onClick={() => setHideAnnotations((value) => !value)} title={hideAnnotations ? "显示批注原文" : "遮挡批注原文"} className="flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-2.5 py-2 text-[10px] text-[#74796d] hover:bg-[#f8f9f5]">{hideAnnotations ? <EyeOff size={13} /> : <Eye size={13} />}{hideAnnotations ? "批注遮挡" : "批注可见"}</button><button onClick={() => setShowOutline((value) => !value)} title={showOutline ? "隐藏大纲" : "显示大纲"} className="flex items-center gap-1.5 rounded-lg border border-[#e5e6df] px-2.5 py-2 text-[10px] text-[#74796d] hover:bg-[#f8f9f5]"><ListTree size={13} />{showOutline ? "隐藏大纲" : "显示大纲"}</button>{note.id > 0 && <button onClick={() => void startNoteReview()} disabled={saving} title={note.reviewEnabled && note.reviewDueAt ? `下次复习 ${formatDate(note.reviewDueAt)}` : "加入 FSRS 笔记复习"} className="flex items-center gap-1.5 rounded-lg border border-[#dce4d5] bg-[#f7f9f4] px-2.5 py-2 text-[10px] font-medium text-[#607451] hover:bg-[#edf1e8] disabled:opacity-50"><Brain size={13} />{note.reviewEnabled ? "复习笔记" : "加入复习"}</button>}{note.id > 0 && <button onClick={() => void removeNote()} className="flex items-center gap-1.5 rounded-lg border border-[#f0dcd6] px-3 py-2 text-xs font-medium text-[#a75e4e] hover:bg-[#fff5f1]"><Trash2 size={13} />删除</button>}<button onClick={() => void persistNote().catch((cause: unknown) => setError(toErrorMessage(cause, "保存失败")))} disabled={saving || !dirty} className="flex items-center gap-1.5 rounded-lg bg-[#30352a] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#41473a] disabled:cursor-default disabled:bg-[#eef0e9] disabled:text-[#8d9185]">{saving ? <LoaderCircle className="animate-spin" size={13} /> : <Check size={13} />}{saving ? "保存中" : dirty ? "保存" : "已保存"}</button></div>
           </div>
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between px-6 pt-4 text-[10px] text-[#a6a89e]"><span>{view === "edit" ? "Markdown 编辑器 · 选中原文后可批注或创建问答卡" : "预览 · 选择一段内容添加批注或复习卡片"}</span><span>{view === "edit" ? "Ctrl / ⌘ + S 保存" : "点击“编辑”继续修改"}</span></div>
